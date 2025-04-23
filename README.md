@@ -26,4 +26,5 @@ APPID：5171308068
 access token：DMwm_fkqA4lHn9-WhsxnRpbERJRRLSkH
 voice type：BV119_streaming
 
-ok 和哦啦违法
+TTS模块：./src/test_tts.py
+题库：./src/data/evil_frog_quiz_database.json
