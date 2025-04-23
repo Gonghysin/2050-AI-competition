@@ -1,0 +1,3 @@
+[submodule "my_code_repository"]
+	path = my_code_repository
+	url = https://github.com/Gonghysin/my_code_repository
