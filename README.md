@@ -26,4 +26,4 @@ APPID：5171308068
 access token：DMwm_fkqA4lHn9-WhsxnRpbERJRRLSkH
 voice type：BV119_streaming
 
-ok
+ok 和哦啦违法
