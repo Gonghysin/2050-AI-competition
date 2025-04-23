@@ -65,7 +65,9 @@ class TTSHelper:
         
         # 准备请求体数据
         data = {
-            "app_id": self.app_id,
+            "app": {
+                "appid": self.app_id
+            },
             "text": text,
             "voice_type": self.voice_type,
             "voice_speed": speed,
