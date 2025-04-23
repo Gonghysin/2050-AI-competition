@@ -5,6 +5,7 @@ from typing import Optional, Union
 import base64
 from dotenv import load_dotenv
 import io
+import uuid
 
 # 加载环境变量
 load_dotenv()
@@ -42,7 +43,8 @@ class TTSHelper:
         output_file: Optional[str] = None,
         speed: float = 1.0,
         volume: float = 1.0,
-        pitch: float = 1.0
+        pitch: float = 1.0,
+        audio_format: str = "mp3"
     ) -> Union[bytes, str]:
         """
         将文本转换为语音
@@ -50,9 +52,10 @@ class TTSHelper:
         参数:
             text: 需要转换为语音的文本
             output_file: 输出语音文件的路径，默认为None（返回音频数据）
-            speed: 语速，默认为1.0
-            volume: 音量，默认为1.0
-            pitch: 音调，默认为1.0
+            speed: 语速，默认为1.0，范围[0.2,3]
+            volume: 音量，默认为1.0，范围[0.1,3]
+            pitch: 音调，默认为1.0，范围[0.1,3]
+            audio_format: 输出音频格式，默认为mp3，可选wav/pcm/ogg_opus/mp3
             
         返回:
             如果指定了output_file，则返回文件路径
@@ -63,16 +66,30 @@ class TTSHelper:
             "Authorization": f"Bearer;{self.access_token}"
         }
         
-        # 准备请求体数据
+        # 准备请求体数据（根据官方文档规范）
         data = {
             "app": {
-                "appid": self.app_id
+                "appid": self.app_id,
+                "token": "access_token",
+                "cluster": "volcano_tts"
             },
-            "text": text,
-            "voice_type": self.voice_type,
-            "voice_speed": speed,
-            "voice_volume": volume,
-            "voice_pitch": pitch
+            "user": {
+                "uid": "user_id"
+            },
+            "audio": {
+                "voice_type": self.voice_type,
+                "encoding": audio_format,
+                "rate": 24000,
+                "speed_ratio": speed,
+                "volume_ratio": volume,
+                "pitch_ratio": pitch
+            },
+            "request": {
+                "reqid": str(uuid.uuid4()),
+                "text": text,
+                "text_type": "plain",
+                "operation": "query"
+            }
         }
         
         try:
@@ -90,11 +107,11 @@ class TTSHelper:
             result = response.json()
             
             # 检查响应中是否有错误
-            if result.get("code") != 0:
+            if result.get("code") != 3000:  # 3000表示成功
                 raise Exception(f"TTS转换失败: {result.get('message')}")
             
             # 获取音频数据（Base64编码）
-            audio_data_base64 = result.get("data", {}).get("audio")
+            audio_data_base64 = result.get("data")
             
             if not audio_data_base64:
                 raise Exception("响应中没有音频数据")
@@ -119,7 +136,8 @@ class TTSHelper:
         text: str, 
         speed: float = 1.0,
         volume: float = 1.0,
-        pitch: float = 1.0
+        pitch: float = 1.0,
+        audio_format: str = "mp3"
     ) -> io.BytesIO:
         """
         将文本转换为语音并返回一个流对象
@@ -129,6 +147,7 @@ class TTSHelper:
             speed: 语速，默认为1.0
             volume: 音量，默认为1.0
             pitch: 音调，默认为1.0
+            audio_format: 输出音频格式，默认为mp3
             
         返回:
             包含音频数据的BytesIO对象
@@ -137,7 +156,8 @@ class TTSHelper:
             text=text,
             speed=speed,
             volume=volume,
-            pitch=pitch
+            pitch=pitch,
+            audio_format=audio_format
         )
         
         return io.BytesIO(audio_bytes)
