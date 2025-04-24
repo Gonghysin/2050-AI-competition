@@ -51,21 +51,17 @@ def chat():
     
     logger.debug(f"请求数据: message='{message[:20]}...', model={model}, session_id={session_id}")
     
-    # 如果没有提供session_id，创建一个新的
-    if not session_id:
-        session_id = str(uuid.uuid4())
+    # 初始化会话及青蛙人设
+    if not session_id or session_id not in sessions:
+        session_id = session_id or str(uuid.uuid4())
         sessions[session_id] = []
-        logger.debug(f"创建新会话 session_id={session_id}")
-        
-    # 如果提供了session_id但不存在，则创建一个新的历史记录列表
-    if session_id not in sessions:
-        sessions[session_id] = []
-        logger.debug(f"为现有session_id创建新的历史记录 session_id={session_id}")
-    
+        sessions[session_id].append({"role": "system", "content": "你是一只邪恶青蛙博士，语气傲慢又幽默，擅长出难题挑战人类。即使在普通对话中也要保持青蛙人设。当你感觉用户想要挑战你时（例如他们直接提到'挑战'、'测试'等词），请在回复的开头加上特定标识语'【呱！挑战模式启动！】'，然后继续你的回复。"})
+        logger.debug(f"初始化新会话并添加系统提示，session_id={session_id}")
+
     # 添加用户消息到历史记录
     sessions[session_id].append({"role": "user", "content": message})
     logger.debug(f"添加用户消息到历史记录, 当前历史记录长度: {len(sessions[session_id])}")
-    
+
     try:
         # 调用AI助手获取回复
         logger.info(f"调用AI助手获取回复, model={model}")
@@ -77,6 +73,49 @@ def chat():
         # 提取回复内容
         ai_response = response['choices'][0]['message']['content']
         logger.debug(f"AI回复内容: '{ai_response[:50]}...'")
+        
+        # 检测是否有挑战模式标识
+        challenge_pattern = r"【呱！挑战模式启动！】"
+        if re.search(challenge_pattern, ai_response):
+            logger.info("检测到挑战模式标识，启动挑战流程")
+            # 移除标识语句
+            ai_response = re.sub(challenge_pattern, "", ai_response).strip()
+            # 添加AI初始回复到历史记录
+            sessions[session_id].append({"role": "assistant", "content": ai_response})
+            
+            # 获取挑战模式题目
+            from src.quiz_processor import EvilFrogQuizProcessor
+            processor = EvilFrogQuizProcessor()
+            questions = processor.get_challenge_questions()
+            
+            # 构建挑战回复
+            challenge_text = f"{ai_response}\n\n让我们开始挑战！请回答以下三道题：\n"
+            for idx, q in enumerate(questions, 1):
+                q_text = q.get('question', '')
+                # 如果是选择题，添加选项
+                if q.get('type') == 'choice' and 'options' in q:
+                    q_text += "\n"
+                    for opt_key, opt_val in q.get('options', {}).items():
+                        q_text += f"{opt_key}. {opt_val}\n"
+                challenge_text += f"{idx}. {q_text}\n"
+            
+            # 更新历史记录
+            sessions[session_id][-1]["content"] = challenge_text
+            
+            # 生成音频
+            audio_filename = f"{session_id}_{uuid.uuid4()}_challenge.mp3"
+            audio_path = os.path.join(app.static_folder, audio_filename)
+            tts_helper.text_to_speech(text=challenge_text, output_file=audio_path)
+            audio_files.add(audio_filename)
+            
+            # 返回挑战模式响应
+            return jsonify({
+                "session_id": session_id,
+                "message": challenge_text,
+                "audio_url": f"/static/{audio_filename}",
+                "challenge_mode": True,
+                "questions": questions
+            })
         
         # 优化文本格式，增加适当换行
         ai_response = optimize_text_format(ai_response)

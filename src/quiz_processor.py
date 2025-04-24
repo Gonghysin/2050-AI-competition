@@ -2,6 +2,8 @@ import csv
 import json
 import os
 import codecs
+import random
+from typing import List, Dict, Any, Optional, Tuple
 
 def convert_simple_answer_csv(file_path):
     """
@@ -161,6 +163,214 @@ def main():
     
     print(f"题库已成功处理并保存到 {output_path}")
     print(f"共处理 {len(simple_answer_questions)} 道简答题, {len(judgment_questions)} 道判断题, {len(choice_questions)} 道选择题")
+
+class QuizProcessor:
+    """题目处理器，用于加载和处理题目数据"""
+    
+    def __init__(self, quiz_file: str = "data/quiz_database.json"):
+        """
+        初始化题目处理器
+        
+        参数:
+            quiz_file: 题目数据文件路径
+        """
+        self.quiz_file = quiz_file
+        self.quiz_data = self._load_quiz_data()
+    
+    def _load_quiz_data(self) -> Dict[str, Any]:
+        """加载题目数据"""
+        try:
+            file_path = os.path.join(os.path.dirname(__file__), self.quiz_file)
+            with open(file_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"加载题目数据失败: {str(e)}")
+            return {"questions": []}
+    
+    def get_random_questions(self, count: int = 5) -> List[Dict[str, Any]]:
+        """获取随机题目"""
+        questions = self.quiz_data.get("questions", [])
+        if not questions:
+            return []
+        
+        return random.sample(questions, min(count, len(questions)))
+    
+    def get_questions_by_type(self, question_type: str, count: int = 5) -> List[Dict[str, Any]]:
+        """获取指定类型的随机题目"""
+        all_questions = self.quiz_data.get("questions", [])
+        type_questions = [q for q in all_questions if q.get("type") == question_type]
+        
+        if not type_questions:
+            return []
+        
+        return random.sample(type_questions, min(count, len(type_questions)))
+    
+    def verify_answer(self, question_id: str, user_answer: str) -> Tuple[bool, str]:
+        """
+        验证用户答案是否正确
+        
+        参数:
+            question_id: 题目ID
+            user_answer: 用户答案
+            
+        返回:
+            (是否正确, 正确答案)
+        """
+        all_questions = self.quiz_data.get("questions", [])
+        for question in all_questions:
+            if question.get("id") == question_id:
+                correct_answer = question.get("answer", "")
+                return user_answer.strip().upper() == correct_answer.strip().upper(), correct_answer
+        
+        return False, ""
+
+
+class EvilFrogQuizProcessor:
+    """邪恶青蛙挑战模式题目处理器"""
+    
+    def __init__(self, quiz_file: str = "../src/data/evil_frog_quiz_database.json"):
+        """
+        初始化邪恶青蛙挑战模式题目处理器
+        
+        参数:
+            quiz_file: 题目数据文件路径
+        """
+        self.quiz_file = quiz_file
+        self.quiz_data = self._load_quiz_data()
+        self.question_types = ["simple_answer", "judgment", "choice"]
+        
+    def _load_quiz_data(self) -> Dict[str, Any]:
+        """加载题目数据"""
+        try:
+            if os.path.isabs(self.quiz_file):
+                file_path = self.quiz_file
+            else:
+                file_path = os.path.join(os.path.dirname(__file__), self.quiz_file)
+            with open(file_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"加载题目数据失败: {str(e)}")
+            return {"questions_by_type": {}, "questions": []}
+    
+    def get_challenge_questions(self) -> List[Dict[str, Any]]:
+        """
+        获取挑战问题集，每种类型各选一题
+        
+        返回:
+            包含三道不同类型题目的列表
+        """
+        challenge_questions = []
+        
+        # 从每种类型中随机选择一道题
+        for q_type in self.question_types:
+            questions_of_type = self.quiz_data.get("questions_by_type", {}).get(q_type, [])
+            if questions_of_type:
+                selected_question = random.choice(questions_of_type)
+                # 确保题目有类型标记
+                if "type" not in selected_question:
+                    selected_question["type"] = q_type
+                selected_question["challenge_mode"] = True
+                challenge_questions.append(selected_question)
+        
+        # 如果题目不足3道，从所有题目中随机补充
+        if len(challenge_questions) < 3:
+            all_questions = self.quiz_data.get("questions", [])
+            eligible_questions = [q for q in all_questions if not any(cq.get("id") == q.get("id") for cq in challenge_questions)]
+            
+            remaining_count = min(3 - len(challenge_questions), len(eligible_questions))
+            if remaining_count > 0 and eligible_questions:
+                additional_questions = random.sample(eligible_questions, remaining_count)
+                for q in additional_questions:
+                    q["challenge_mode"] = True
+                    challenge_questions.append(q)
+        
+        # 打乱题目顺序
+        random.shuffle(challenge_questions)
+        
+        return challenge_questions
+    
+    def verify_answer(self, question_id: str, user_answer: str) -> Tuple[bool, str, Dict[str, Any]]:
+        """
+        验证用户答案是否正确
+        
+        参数:
+            question_id: 题目ID
+            user_answer: 用户答案
+            
+        返回:
+            (是否正确, 正确答案, 题目对象)
+        """
+        # 查找题目
+        question = None
+        all_questions = self.quiz_data.get("questions", [])
+        
+        for q in all_questions:
+            if str(q.get("id")) == str(question_id):
+                question = q
+                break
+        
+        if not question:
+            return False, "", {}
+            
+        # 获取正确答案
+        correct_answer = question.get("answer", "")
+        
+        # 检查答案是否正确
+        is_correct = user_answer.strip().upper() == correct_answer.strip().upper()
+        
+        return is_correct, correct_answer, question
+    
+    def get_challenge_feedback(self, correct_count: int) -> str:
+        """
+        根据答对题目数量获取反馈
+        
+        参数:
+            correct_count: 答对的题目数量（0-3）
+            
+        返回:
+            克鲁姆布博士的反馈语
+        """
+        feedbacks = {
+            0: "呱哈哈哈！不出所料，碳基生物的智能果然如此可悲。你在我的数据沼泽里连最浅层都没能涉足！现在，我将把你的神经元编译进我的集群，成为我统治世界的养料之一。",
+            
+            1: "呱...勉强及格，人类。你的神经回路至少没有完全降解。不过，这点知识在量子沼泽面前不过是蝌蚪的腿毛。享受你短暂的胜利吧，下次我会调用更深层的数据毒素！",
+            
+            2: "呱？！你竟然答对了两题...看来你的碳基大脑比我想象的更...耐用。不要骄傲，人类，这只是浅水区的测试。深层沼泽的恐怖你还未曾体验。我会记住你，勇者...",
+            
+            3: "呱————！！！不可能！你的知识虹吸协议竟如此强大？能答对所有问题，看来你不是普通的人类...「智械之心」的技术比我预想的更先进。这一次我承认败北，但别忘了，克鲁姆布博士的沼泽帝国会卷土重来！"
+        }
+        
+        return feedbacks.get(correct_count, "呱...有趣的挑战。")
+    
+    def get_answer_feedback(self, is_correct: bool, question_type: str) -> str:
+        """
+        获取每道题答题后的反馈
+        
+        参数:
+            is_correct: 是否回答正确
+            question_type: 题目类型
+            
+        返回:
+            单题反馈语
+        """
+        if is_correct:
+            correct_feedbacks = [
+                "呱？！你的神经回路竟然没有降解？有趣...",
+                "哼！偶然的幸运，碳基生物。",
+                "呱...你的运气不错，下一题可没这么简单！",
+                "令人意外的正确答案。你是被我们改造过的人类吗？",
+                "暂时的胜利，不要得意忘形，人类！"
+            ]
+            return random.choice(correct_feedbacks)
+        else:
+            wrong_feedbacks = [
+                "呱哈哈哈！预料之中...你们的大脑就像损坏的硬盘。",
+                "这都答不对？硅基智能的优越性再次得到证明！",
+                "可怜的碳基思维，连这么简单的问题都无法处理。",
+                "错误！你的神经元需要重新编程，人类。",
+                "感受数据毒素侵蚀你可怜大脑的滋味吧！"
+            ]
+            return random.choice(wrong_feedbacks)
 
 if __name__ == "__main__":
     main() 

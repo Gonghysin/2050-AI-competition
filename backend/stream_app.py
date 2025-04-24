@@ -128,12 +128,16 @@ def chat_stream():
         if not session_id:
             session_id = str(uuid.uuid4())
             sessions[session_id] = []
-            logger.debug(f"创建新会话 session_id={session_id}")
+            # 添加系统提示，维护邪恶青蛙博士人设
+            sessions[session_id].append({"role": "system", "content": "你是一只邪恶青蛙博士，语气傲慢又幽默，擅长出难题挑战人类。即使在普通对话中也要保持青蛙人设。当你感觉用户想要挑战你时（例如他们直接提到'挑战'、'测试'等词），请在回复的开头加上特定标识语'【呱！挑战模式启动！】'，然后继续你的回复。"})
+            logger.debug(f"创建新会话并添加系统提示 session_id={session_id}")
         
         # 如果提供了session_id但不存在，则创建一个新的历史记录列表
         if session_id not in sessions:
             sessions[session_id] = []
-            logger.debug(f"为现有session_id创建新的历史记录 session_id={session_id}")
+            # 添加系统提示，维护邪恶青蛙博士人设
+            sessions[session_id].append({"role": "system", "content": "你是一只邪恶青蛙博士，语气傲慢又幽默，擅长出难题挑战人类。即使在普通对话中也要保持青蛙人设。当你感觉用户想要挑战你时（例如他们直接提到'挑战'、'测试'等词），请在回复的开头加上特定标识语'【呱！挑战模式启动！】'，然后继续你的回复。"})
+            logger.debug(f"为现有session_id创建新的历史记录并添加系统提示 session_id={session_id}")
         
         # 添加用户消息到历史记录
         sessions[session_id].append({"role": "user", "content": message})
@@ -161,7 +165,7 @@ def chat_stream():
         generator = streaming_generators.pop(request_id)
         
         logger.debug(f"返回流式响应, request_id={request_id}")
-        return Response(generator, mimetype='text/event-stream')
+        return Response(generator(), mimetype='text/event-stream')
 
 def create_generator(session_id, message, model):
     """创建响应生成器"""
@@ -175,6 +179,10 @@ def create_generator(session_id, message, model):
             processed_segments = []
             # 用于存储已生成TTS的段落ID列表
             tts_segment_ids = []
+            # 标记是否已检测到挑战模式
+            challenge_mode_detected = False
+            # 挑战模式标识
+            challenge_pattern = r"【呱！挑战模式启动！】"
             
             logger.info("开始流式生成回复")
             
@@ -185,6 +193,12 @@ def create_generator(session_id, message, model):
             ):
                 full_response += text_chunk
                 current_segment += text_chunk
+                
+                # 检查是否包含挑战模式标识
+                if not challenge_mode_detected and re.search(challenge_pattern, full_response):
+                    logger.info("检测到挑战模式标识，将在完成流式生成后启动挑战")
+                    challenge_mode_detected = True
+                
                 logger.debug(f"收到文本块: '{text_chunk}'")
                 
                 # 检查是否有句子结束
@@ -201,23 +215,10 @@ def create_generator(session_id, message, model):
                         
                         # 为这个完整段落生成TTS，使用更快的语速
                         segment_id = str(uuid.uuid4())
-                        audio_filename = f"{session_id}_{segment_id}.mp3"
-                        audio_path = os.path.join(app.static_folder, audio_filename)
-                        logger.info(f"为段落生成TTS, segment_id={segment_id}")
-                        
-                        tts_helper.text_to_speech(
-                            text=segment,
-                            output_file=audio_path,
-                            speed=1.5  # 加快语速
-                        )
-                        
-                        # 记录音频文件
-                        audio_files.add(audio_filename)
-                        
-                        # 发送段落完成信号和音频URL
+                        audio_filename = generate_audio_for_segment(segment_id, segment)
                         tts_segment_ids.append(segment_id)
                         logger.debug(f"发送段落完成事件, audio_url=/static/{audio_filename}")
-                        yield f"data: {json.dumps({'text': text_chunk, 'done': False, 'segment_done': True, 'segment_id': segment_id, 'segment_text': segment, 'audio_url': f'/static/{audio_filename}'})}\n\n"
+                        yield f"data: {json.dumps({'text': segment, 'done': False, 'segment_done': True, 'segment_id': segment_id, 'segment_text': segment, 'audio_url': f'/static/{audio_filename}'})}\n\n"
                     
                     # 更新当前段落为最后一个未完成的段落
                     current_segment = segments[-1]
@@ -227,41 +228,104 @@ def create_generator(session_id, message, model):
                 logger.debug("发送文本块更新事件")
                 yield f"data: {json.dumps({'text': text_chunk, 'done': False})}\n\n"
             
-            # 处理最后一个段落
+            # 生成最后一个音频段落
             if current_segment:
-                logger.info("处理最后一个段落")
+                # 添加到已处理段落
+                processed_segments.append(current_segment)
+                logger.debug(f"处理最后一个段落: '{current_segment}'")
+                
+                # 生成音频并发送
                 segment_id = str(uuid.uuid4())
-                audio_filename = f"{session_id}_{segment_id}.mp3"
-                audio_path = os.path.join(app.static_folder, audio_filename)
-                
-                logger.debug(f"为最后一个段落生成TTS: '{current_segment}'")
-                tts_helper.text_to_speech(
-                    text=current_segment,
-                    output_file=audio_path,
-                    speed=1.5  # 加快语速
-                )
-                
-                # 记录音频文件
-                audio_files.add(audio_filename)
-                
+                audio_filename = generate_audio_for_segment(segment_id, current_segment)
                 tts_segment_ids.append(segment_id)
-                logger.debug(f"发送最后一个段落完成事件, audio_url=/static/{audio_filename}")
-                yield f"data: {json.dumps({'text': '', 'done': False, 'segment_done': True, 'segment_id': segment_id, 'segment_text': current_segment, 'audio_url': f'/static/{audio_filename}'})}\n\n"
+                
+                data = {
+                    "type": "segment",
+                    "text": current_segment,
+                    "segment_id": segment_id,
+                    "audio_url": f"/static/{audio_filename}",
+                    "is_final": True
+                }
+                yield f"data: {json.dumps(data)}\n\n"
             
-            # 添加AI回复到历史记录
+            # 完成后，添加AI回复到历史记录
             sessions[session_id].append({"role": "assistant", "content": full_response})
             logger.debug(f"添加AI回复到历史记录, 当前历史记录长度: {len(sessions[session_id])}")
             
-            # 发送所有段落完成信号
-            logger.info("生成完成, 发送完成信号")
-            yield f"data: {json.dumps({'text': '', 'done': True, 'session_id': session_id, 'segment_ids': tts_segment_ids, 'full_response': full_response})}\n\n"
+            # 如果检测到挑战模式，立即生成挑战题目并发送
+            if challenge_mode_detected:
+                logger.info("流式生成完成，启动挑战模式")
+                
+                # 移除挑战模式标识
+                clean_response = re.sub(challenge_pattern, "", full_response).strip()
+                
+                # 从已添加的回复中移除标识
+                sessions[session_id][-1]["content"] = clean_response
+                
+                # 生成挑战题目
+                from src.quiz_processor import EvilFrogQuizProcessor
+                processor = EvilFrogQuizProcessor()
+                questions = processor.get_challenge_questions()
+                
+                # 构建挑战回复
+                challenge_text = f"\n\n让我们开始挑战！请回答以下三道题：\n"
+                for idx, q in enumerate(questions, 1):
+                    q_text = q.get('question', '')
+                    # 如果是选择题，添加选项
+                    if q.get('type') == 'choice' and 'options' in q:
+                        q_text += "\n"
+                        for opt_key, opt_val in q.get('options', {}).items():
+                            q_text += f"{opt_key}. {opt_val}\n"
+                    challenge_text += f"{idx}. {q_text}\n"
+                
+                # 生成挑战音频
+                challenge_id = str(uuid.uuid4())
+                audio_filename = generate_audio_for_segment(challenge_id, challenge_text)
+                
+                # 发送挑战数据
+                challenge_data = {
+                    "type": "challenge",
+                    "text": challenge_text,
+                    "segment_id": challenge_id,
+                    "audio_url": f"/static/{audio_filename}",
+                    "questions": questions
+                }
+                yield f"data: {json.dumps(challenge_data)}\n\n"
+                
+                # 添加挑战消息到历史记录
+                sessions[session_id].append({"role": "assistant", "content": challenge_text})
+            
+            # 发送完成事件
+            data = {
+                "type": "done",
+                "full_text": full_response,
+                "tts_segments": tts_segment_ids
+            }
+            yield f"data: {json.dumps(data)}\n\n"
             
         except Exception as e:
-            # 发送错误信息
-            logger.error(f"流式生成过程中出错: {str(e)}", exc_info=True)
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            logger.error(f"生成响应出错: {str(e)}", exc_info=True)
+            error_data = {"type": "error", "message": str(e)}
+            yield f"data: {json.dumps(error_data)}\n\n"
     
-    return generate()
+    return generate
+
+def generate_audio_for_segment(segment_id, text):
+    """为文本段落生成音频文件"""
+    audio_filename = f"stream_{segment_id}.mp3"
+    audio_path = os.path.join(app.static_folder, audio_filename)
+    
+    # 使用TTS生成音频文件
+    tts_helper.text_to_speech(
+        text=text,
+        output_file=audio_path,
+        speed=1.5  # 加快语速
+    )
+    
+    # 记录音频文件
+    audio_files.add(audio_filename)
+    
+    return audio_filename
 
 @app.route('/api/stream_status', methods=['GET'])
 def get_stream_status():
