@@ -214,71 +214,173 @@ export default {
             const data = JSON.parse(event.data);
             console.log('[App] 收到SSE事件:', data);
             
-            // 处理文本更新
-            if (data.text) {
-              this.currentText += data.text;
-              console.log(`[App] 更新字幕: 添加"${data.text}"`);
+            // 处理不同类型的事件
+            switch (data.type) {
+              // 处理文本更新
+              case 'update':
+                if (data.text) {
+                  this.currentText += data.text;
+                  console.log(`[App] 更新字幕: 添加"${data.text}"`);
+                  
+                  if (this.aiStatus === 'thinking') {
+                    this.aiStatus = 'speaking';
+                    console.log('[App] 状态变更为: speaking');
+                  }
+                }
+                break;
               
-              if (this.aiStatus === 'thinking') {
-                this.aiStatus = 'speaking';
-                console.log('[App] 状态变更为: speaking');
-              }
+              // 处理段落完成
+              case 'segment':
+                console.log(`[App] 段落完成, 音频URL: ${data.audio_url}`);
+                console.log(`[App] 段落文本: "${data.text.substring(0, 30)}${data.text.length > 30 ? '...' : ''}"`);
+                
+                // 将音频添加到队列
+                this.audioQueue.push(data.audio_url);
+                console.log(`[App] 音频添加到队列, 当前队列长度: ${this.audioQueue.length}`);
+                
+                // 记录已播放的音频文件
+                const filename = data.audio_url.replace('/static/', '');
+                this.playedAudioFiles.push(filename);
+                
+                // 如果没有正在播放的音频，开始播放
+                if (this.audioQueue.length === 1 && !this.isAudioPlaying) {
+                  console.log('[App] 开始播放音频队列');
+                  this.playNextAudio();
+                }
+                break;
+              
+              // 处理生成完成
+              case 'done':
+                console.log('[App] 生成完成');
+                
+                // 保存会话ID
+                if (data.session_id) {
+                  this.sessionId = data.session_id;
+                  console.log(`[App] 会话ID: ${data.session_id}`);
+                }
+                
+                if (data.audio_segments) {
+                  console.log(`[App] 共有段落数: ${data.audio_segments.length}`);
+                }
+                
+                // 关闭连接
+                this.eventSource.close();
+                this.eventSource = null;
+                console.log('[App] 关闭EventSource连接');
+                
+                // 当所有音频播放完毕后，将状态改为idle
+                if (this.audioQueue.length === 0 && !this.isAudioPlaying) {
+                  this.aiStatus = 'idle';
+                  console.log('[App] 状态变更为: idle');
+                  // 清理音频文件
+                  this.cleanupAudioFiles();
+                }
+                
+                console.log(`[App] 流式请求完成, 总耗时: ${Date.now() - startTime}ms`);
+                break;
+              
+              // 处理挑战模式
+              case 'challenge':
+                console.log('[App] 收到挑战模式数据');
+                this.currentText = data.challenge_text;
+                
+                // 将音频添加到队列
+                if (data.audio_url) {
+                  this.audioQueue.push(data.audio_url);
+                  console.log(`[App] 音频添加到队列, 当前队列长度: ${this.audioQueue.length}`);
+                  
+                  // 记录已播放的音频文件
+                  const challengeFilename = data.audio_url.replace('/static/', '');
+                  this.playedAudioFiles.push(challengeFilename);
+                  
+                  // 如果没有正在播放的音频，开始播放
+                  if (this.audioQueue.length === 1 && !this.isAudioPlaying) {
+                    console.log('[App] 开始播放音频队列');
+                    this.playNextAudio();
+                  }
+                }
+                break;
+              
+              // 处理错误
+              case 'error':
+                console.error('[App] AI回复出错:', data.message);
+                this.aiStatus = 'error';
+                console.log('[App] 状态变更为: error');
+                this.currentText = '抱歉，出现了一些问题，请重试。';
+                this.eventSource.close();
+                this.eventSource = null;
+                console.log('[App] 关闭EventSource连接');
+                break;
             }
             
-            // 处理段落完成
-            if (data.segment_done) {
-              console.log(`[App] 段落完成, 音频URL: ${data.audio_url}`);
-              console.log(`[App] 段落文本: "${data.segment_text.substring(0, 30)}${data.segment_text.length > 30 ? '...' : ''}"`);
-              
-              // 将音频添加到队列
-              this.audioQueue.push(data.audio_url);
-              console.log(`[App] 音频添加到队列, 当前队列长度: ${this.audioQueue.length}`);
-              
-              // 记录已播放的音频文件
-              const filename = data.audio_url.replace('/static/', '');
-              this.playedAudioFiles.push(filename);
-              
-              // 如果没有正在播放的音频，开始播放
-              if (this.audioQueue.length === 1 && !this.isAudioPlaying) {
-                console.log('[App] 开始播放音频队列');
-                this.playNextAudio();
-              }
-            }
-            
-            // 处理生成完成
-            if (data.done) {
-              console.log('[App] 生成完成');
-              
-              // 保存会话ID
-              this.sessionId = data.session_id;
-              console.log(`[App] 会话ID: ${data.session_id}`);
-              console.log(`[App] 共有段落数: ${data.segment_ids.length}`);
-              
-              // 关闭连接
-              this.eventSource.close();
-              this.eventSource = null;
-              console.log('[App] 关闭EventSource连接');
-              
-              // 当所有音频播放完毕后，将状态改为idle
-              if (this.audioQueue.length === 0 && !this.isAudioPlaying) {
-                this.aiStatus = 'idle';
-                console.log('[App] 状态变更为: idle');
-                // 清理音频文件
-                this.cleanupAudioFiles();
+            // 处理旧版本的消息格式（兼容性处理）
+            if (!data.type) {
+              // 处理文本更新
+              if (data.text) {
+                this.currentText += data.text;
+                console.log(`[App] 更新字幕: 添加"${data.text}"`);
+                
+                if (this.aiStatus === 'thinking') {
+                  this.aiStatus = 'speaking';
+                  console.log('[App] 状态变更为: speaking');
+                }
               }
               
-              console.log(`[App] 流式请求完成, 总耗时: ${Date.now() - startTime}ms`);
-            }
-            
-            // 处理错误
-            if (data.error) {
-              console.error('[App] AI回复出错:', data.error);
-              this.aiStatus = 'error';
-              console.log('[App] 状态变更为: error');
-              this.currentText = '抱歉，出现了一些问题，请重试。';
-              this.eventSource.close();
-              this.eventSource = null;
-              console.log('[App] 关闭EventSource连接');
+              // 处理段落完成
+              if (data.segment_done) {
+                console.log(`[App] 段落完成, 音频URL: ${data.audio_url}`);
+                console.log(`[App] 段落文本: "${data.segment_text.substring(0, 30)}${data.segment_text.length > 30 ? '...' : ''}"`);
+                
+                // 将音频添加到队列
+                this.audioQueue.push(data.audio_url);
+                console.log(`[App] 音频添加到队列, 当前队列长度: ${this.audioQueue.length}`);
+                
+                // 记录已播放的音频文件
+                const filename = data.audio_url.replace('/static/', '');
+                this.playedAudioFiles.push(filename);
+                
+                // 如果没有正在播放的音频，开始播放
+                if (this.audioQueue.length === 1 && !this.isAudioPlaying) {
+                  console.log('[App] 开始播放音频队列');
+                  this.playNextAudio();
+                }
+              }
+              
+              // 处理生成完成
+              if (data.done) {
+                console.log('[App] 生成完成');
+                
+                // 保存会话ID
+                this.sessionId = data.session_id;
+                console.log(`[App] 会话ID: ${data.session_id}`);
+                console.log(`[App] 共有段落数: ${data.segment_ids.length}`);
+                
+                // 关闭连接
+                this.eventSource.close();
+                this.eventSource = null;
+                console.log('[App] 关闭EventSource连接');
+                
+                // 当所有音频播放完毕后，将状态改为idle
+                if (this.audioQueue.length === 0 && !this.isAudioPlaying) {
+                  this.aiStatus = 'idle';
+                  console.log('[App] 状态变更为: idle');
+                  // 清理音频文件
+                  this.cleanupAudioFiles();
+                }
+                
+                console.log(`[App] 流式请求完成, 总耗时: ${Date.now() - startTime}ms`);
+              }
+              
+              // 处理错误
+              if (data.error) {
+                console.error('[App] AI回复出错:', data.error);
+                this.aiStatus = 'error';
+                console.log('[App] 状态变更为: error');
+                this.currentText = '抱歉，出现了一些问题，请重试。';
+                this.eventSource.close();
+                this.eventSource = null;
+                console.log('[App] 关闭EventSource连接');
+              }
             }
           } catch (error) {
             console.error('[App] 解析SSE事件出错:', error, event.data);

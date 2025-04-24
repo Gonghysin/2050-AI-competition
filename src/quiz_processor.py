@@ -195,15 +195,43 @@ class QuizProcessor:
         
         return random.sample(questions, min(count, len(questions)))
     
-    def get_questions_by_type(self, question_type: str, count: int = 5) -> List[Dict[str, Any]]:
-        """获取指定类型的随机题目"""
-        all_questions = self.quiz_data.get("questions", [])
-        type_questions = [q for q in all_questions if q.get("type") == question_type]
+    def get_questions_by_type(self, question_type: str, count: int = 1) -> List[Dict[str, Any]]:
+        """
+        获取指定类型的随机题目
         
-        if not type_questions:
+        参数:
+            question_type: 题目类型 (judge=判断题, choice=选择题, qa=问答题)
+            count: 需要获取的题目数量
+            
+        返回:
+            指定类型的随机题目列表
+        """
+        # 映射题库中的类型名称
+        type_mapping = {
+            "judge": "judgment",
+            "choice": "choice",
+            "qa": "simple_answer"
+        }
+        
+        # 获取实际类型名称
+        actual_type = type_mapping.get(question_type, question_type)
+        
+        # 从题库中获取指定类型的题目
+        questions_of_type = self.quiz_data.get("questions_by_type", {}).get(actual_type, [])
+        
+        if not questions_of_type:
             return []
         
-        return random.sample(type_questions, min(count, len(type_questions)))
+        # 随机选择指定数量的题目
+        selected_questions = random.sample(questions_of_type, min(count, len(questions_of_type)))
+        
+        # 确保题目有正确的类型标记
+        for q in selected_questions:
+            if "type" not in q:
+                q["type"] = question_type
+            q["challenge_mode"] = True
+        
+        return selected_questions
     
     def verify_answer(self, question_id: str, user_answer: str) -> Tuple[bool, str]:
         """
@@ -252,12 +280,15 @@ class EvilFrogQuizProcessor:
             print(f"加载题目数据失败: {str(e)}")
             return {"questions_by_type": {}, "questions": []}
     
-    def get_challenge_questions(self) -> List[Dict[str, Any]]:
+    def get_challenge_questions(self, count: int = 3) -> List[Dict[str, Any]]:
         """
         获取挑战问题集，每种类型各选一题
         
+        参数:
+            count: 需要获取的题目数量
+            
         返回:
-            包含三道不同类型题目的列表
+            包含题目的列表
         """
         challenge_questions = []
         
@@ -272,18 +303,22 @@ class EvilFrogQuizProcessor:
                 selected_question["challenge_mode"] = True
                 challenge_questions.append(selected_question)
         
-        # 如果题目不足3道，从所有题目中随机补充
-        if len(challenge_questions) < 3:
+        # 如果题目不足count道，从所有题目中随机补充
+        if len(challenge_questions) < count:
             all_questions = self.quiz_data.get("questions", [])
             eligible_questions = [q for q in all_questions if not any(cq.get("id") == q.get("id") for cq in challenge_questions)]
             
-            remaining_count = min(3 - len(challenge_questions), len(eligible_questions))
+            remaining_count = min(count - len(challenge_questions), len(eligible_questions))
             if remaining_count > 0 and eligible_questions:
                 additional_questions = random.sample(eligible_questions, remaining_count)
                 for q in additional_questions:
                     q["challenge_mode"] = True
                     challenge_questions.append(q)
         
+        # 返回指定数量的题目
+        if len(challenge_questions) > count:
+            challenge_questions = challenge_questions[:count]
+            
         # 打乱题目顺序
         random.shuffle(challenge_questions)
         

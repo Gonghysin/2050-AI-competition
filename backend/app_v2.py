@@ -36,6 +36,37 @@ sessions = {}
 # 全局变量，用于记录已生成的音频文件
 audio_files = set()
 
+# 添加文本清理函数
+def clean_text_for_tts(text):
+    """
+    清理文本，去除不适合TTS的内容
+    """
+    import re
+    
+    # 去除JSON格式、代码块等
+    text = re.sub(r'```[\s\S]*?```', '', text)
+    
+    # 去除Markdown格式
+    text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)  # 加粗
+    text = re.sub(r'\*(.*?)\*', r'\1', text)      # 斜体
+    text = re.sub(r'__(.*?)__', r'\1', text)      # 下划线
+    text = re.sub(r'~~(.*?)~~', r'\1', text)      # 删除线
+    
+    # 去除URL
+    text = re.sub(r'https?://\S+', '', text)
+    
+    # 去除HTML标签
+    text = re.sub(r'<[^>]*>', '', text)
+    
+    # 去除中括号内容
+    text = re.sub(r'\[.*?\]', '', text)
+    
+    # 去除多余空格和换行
+    text = re.sub(r'\s+', ' ', text)
+    text = text.strip()
+    
+    return text
+
 @app.route('/api/chat', methods=['POST'])
 def chat():
     """
@@ -77,12 +108,14 @@ def chat():
             challenge_data = response['challenge_data']
             challenge_text = challenge_data['message']
             
-            # 使用TTS生成挑战语音
+            # 使用TTS生成挑战语音，使用清理后的文本
             audio_filename = f"{session_id}_{uuid.uuid4()}_challenge.mp3"
             audio_path = os.path.join(app.static_folder, audio_filename)
             
+            # 清理文本再进行TTS
+            clean_challenge_text = clean_text_for_tts(challenge_text)
             tts_helper.text_to_speech(
-                text=challenge_text,
+                text=clean_challenge_text,
                 output_file=audio_path,
                 speed=1.5  # 加快语速
             )
@@ -104,8 +137,10 @@ def chat():
         audio_filename = f"{session_id}_{uuid.uuid4()}.mp3"
         audio_path = os.path.join(app.static_folder, audio_filename)
         
+        # 清理文本再进行TTS
+        clean_ai_response = clean_text_for_tts(ai_response)
         tts_helper.text_to_speech(
-            text=ai_response,
+            text=clean_ai_response,
             output_file=audio_path,
             speed=1.5  # 加快语速
         )
@@ -210,13 +245,15 @@ def create_stream_generator(session_id, agent, message):
                     challenge_data = metadata.get("challenge_data")
                     challenge_text = challenge_data["message"]
                     
-                    # 生成挑战音频
+                    # 生成挑战音频，使用清理后的文本
                     challenge_id = str(uuid.uuid4())
                     audio_filename = f"stream_{challenge_id}.mp3"
                     audio_path = os.path.join(app.static_folder, audio_filename)
                     
+                    # 清理文本再进行TTS
+                    clean_challenge_text = clean_text_for_tts(challenge_text)
                     tts_helper.text_to_speech(
-                        text=challenge_text,
+                        text=clean_challenge_text,
                         output_file=audio_path,
                         speed=1.5
                     )
@@ -245,8 +282,10 @@ def create_stream_generator(session_id, agent, message):
                     audio_filename = f"stream_{segment_id}.mp3"
                     audio_path = os.path.join(app.static_folder, audio_filename)
                     
+                    # 清理文本再进行TTS
+                    clean_segment = clean_text_for_tts(current_segment)
                     tts_helper.text_to_speech(
-                        text=current_segment,
+                        text=clean_segment,
                         output_file=audio_path,
                         speed=1.5
                     )
@@ -281,8 +320,10 @@ def create_stream_generator(session_id, agent, message):
                 audio_filename = f"stream_{segment_id}.mp3"
                 audio_path = os.path.join(app.static_folder, audio_filename)
                 
+                # 清理文本再进行TTS
+                clean_segment = clean_text_for_tts(current_segment)
                 tts_helper.text_to_speech(
-                    text=current_segment,
+                    text=clean_segment,
                     output_file=audio_path,
                     speed=1.5
                 )
@@ -398,6 +439,7 @@ def delete_session(session_id):
 @app.route('/api/cleanup', methods=['POST'])
 def cleanup_audio():
     """清理已使用的音频文件"""
+    logger.info("收到音频文件清理请求")
     data = request.json
     filenames = data.get('filenames', [])
     
@@ -413,10 +455,16 @@ def cleanup_audio():
             except Exception as e:
                 logger.error(f"删除文件出错: {str(e)}")
     
+    logger.info(f"已清理{len(deleted_files)}个音频文件")
     return jsonify({
         "success": True,
         "deleted_files": deleted_files
     })
+
+@app.route('/api/stream/cleanup', methods=['POST'])
+def stream_cleanup_audio():
+    """清理流式模式下的音频文件（与普通模式相同，提供额外API端点以兼容）"""
+    return cleanup_audio()
 
 if __name__ == '__main__':
     # 确保静态文件夹存在
