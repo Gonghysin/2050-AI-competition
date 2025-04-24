@@ -5,6 +5,7 @@ import uuid
 import json
 import re
 import logging
+import glob
 from flask import Flask, request, jsonify, Response, send_from_directory
 from flask_cors import CORS
 
@@ -35,12 +36,15 @@ tts_helper = TTSHelper()
 sessions = {}
 
 # 句子和段落分隔符正则表达式
-SEGMENT_PATTERN = re.compile(r'(?<=[。！？.!?])\s*')
+SEGMENT_PATTERN = re.compile(r'(?<=[。！？\.!?])\s*')
 
 # 保存全局响应生成器
 streaming_generators = {}
 
-def split_text_into_segments(text, min_segment_length=20):
+# 全局变量，用于记录已生成的音频文件
+audio_files = set()
+
+def split_text_into_segments(text, min_segment_length=30):
     """
     将文本分割成自然段落或句子
     
@@ -51,7 +55,32 @@ def split_text_into_segments(text, min_segment_length=20):
     返回:
         段落列表
     """
-    # 按句子分隔符分割
+    # 先按换行符分割成段落
+    paragraphs = text.split('\n')
+    paragraphs = [p.strip() for p in paragraphs if p.strip()]
+    
+    # 如果段落已经按换行符分割得很好，直接返回
+    if len(paragraphs) > 1:
+        # 检查段落长度，太短的合并
+        result = []
+        current_paragraph = ""
+        
+        for p in paragraphs:
+            if not current_paragraph:
+                current_paragraph = p
+            elif len(current_paragraph) < min_segment_length:
+                current_paragraph += "\n" + p
+            else:
+                result.append(current_paragraph)
+                current_paragraph = p
+        
+        # 添加最后一个段落
+        if current_paragraph:
+            result.append(current_paragraph)
+        
+        return result
+    
+    # 如果没有换行符，则按句子分隔符分割
     segments = SEGMENT_PATTERN.split(text)
     
     # 初始化结果列表和当前段落
@@ -170,7 +199,7 @@ def create_generator(session_id, message, model):
                         # 添加到已处理段落
                         processed_segments.append(segment)
                         
-                        # 为这个完整段落生成TTS
+                        # 为这个完整段落生成TTS，使用更快的语速
                         segment_id = str(uuid.uuid4())
                         audio_filename = f"{session_id}_{segment_id}.mp3"
                         audio_path = os.path.join(app.static_folder, audio_filename)
@@ -178,8 +207,12 @@ def create_generator(session_id, message, model):
                         
                         tts_helper.text_to_speech(
                             text=segment,
-                            output_file=audio_path
+                            output_file=audio_path,
+                            speed=1.5  # 加快语速
                         )
+                        
+                        # 记录音频文件
+                        audio_files.add(audio_filename)
                         
                         # 发送段落完成信号和音频URL
                         tts_segment_ids.append(segment_id)
@@ -204,8 +237,12 @@ def create_generator(session_id, message, model):
                 logger.debug(f"为最后一个段落生成TTS: '{current_segment}'")
                 tts_helper.text_to_speech(
                     text=current_segment,
-                    output_file=audio_path
+                    output_file=audio_path,
+                    speed=1.5  # 加快语速
                 )
+                
+                # 记录音频文件
+                audio_files.add(audio_filename)
                 
                 tts_segment_ids.append(segment_id)
                 logger.debug(f"发送最后一个段落完成事件, audio_url=/static/{audio_filename}")
@@ -260,6 +297,49 @@ def delete_session(session_id):
     return jsonify({
         "success": True,
         "message": "会话已删除"
+    })
+
+@app.route('/api/stream/cleanup', methods=['POST'])
+def cleanup_stream_audio():
+    """清理已经使用过的流式音频文件"""
+    logger.info("收到清理流式音频文件请求")
+    data = request.json
+    filenames = data.get('filenames', [])
+    
+    deleted_files = []
+    for filename in filenames:
+        if filename in audio_files:
+            file_path = os.path.join(app.static_folder, filename)
+            try:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                    deleted_files.append(filename)
+                    audio_files.remove(filename)
+                    logger.debug(f"已删除流式音频文件: {filename}")
+                else:
+                    logger.warning(f"文件不存在, 无法删除: {filename}")
+            except Exception as e:
+                logger.error(f"删除文件出错: {str(e)}")
+    
+    # 也可以清理所有过期文件
+    if data.get('clear_all', False):
+        try:
+            # 获取当前正在使用的文件之外的所有mp3文件
+            all_files = glob.glob(os.path.join(app.static_folder, '*.mp3'))
+            current_files = set([os.path.join(app.static_folder, f) for f in audio_files])
+            old_files = set(all_files) - current_files
+            
+            for file_path in old_files:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                    deleted_files.append(os.path.basename(file_path))
+                    logger.debug(f"已删除过期流式音频文件: {os.path.basename(file_path)}")
+        except Exception as e:
+            logger.error(f"批量删除过期文件出错: {str(e)}")
+    
+    return jsonify({
+        "success": True,
+        "deleted_files": deleted_files
     })
 
 if __name__ == '__main__':

@@ -37,7 +37,9 @@ export default {
       audioQueue: [],
       isAudioPlaying: false,
       eventSource: null,
-      useStreamMode: true // 是否使用流式模式
+      useStreamMode: true, // 是否使用流式模式
+      playedAudioFiles: [], // 已播放过的音频文件
+      currentAudio: null    // 当前正在播放的音频实例
     };
   },
   methods: {
@@ -46,6 +48,9 @@ export default {
       if (!message.trim()) return;
       
       console.log(`[App] 发送消息: "${message.substring(0, 30)}${message.length > 30 ? '...' : ''}"`);
+      
+      // 停止当前所有音频播放
+      this.stopAllAudio();
       
       // 重置状态
       this.currentText = '';
@@ -74,6 +79,52 @@ export default {
         console.log('[App] 状态变更为: error');
         this.currentText = '抱歉，出现了一些问题，请重试。';
       }
+    },
+    
+    // 停止所有音频播放
+    stopAllAudio() {
+      console.log('[App] 停止所有音频播放');
+      
+      // 清空音频队列
+      this.audioQueue = [];
+      
+      // 停止当前正在播放的音频
+      if (this.currentAudio) {
+        console.log('[App] 停止当前正在播放的音频');
+        this.currentAudio.pause();
+        this.currentAudio = null;
+      }
+      
+      this.isAudioPlaying = false;
+    },
+    
+    // 清理已播放的音频文件
+    cleanupAudioFiles() {
+      if (this.playedAudioFiles.length === 0) return;
+      
+      console.log(`[App] 清理${this.playedAudioFiles.length}个音频文件`);
+      
+      // 根据模式选择不同的清理API
+      const endpoint = this.useStreamMode ? '/api/stream/cleanup' : '/api/cleanup';
+      
+      fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          filenames: this.playedAudioFiles
+        })
+      })
+      .then(response => response.json())
+      .then(data => {
+        console.log(`[App] 成功清理音频文件: ${data.deleted_files.length}个`);
+        // 清空已播放文件列表
+        this.playedAudioFiles = [];
+      })
+      .catch(error => {
+        console.error('[App] 清理音频文件出错:', error);
+      });
     },
     
     // 普通模式处理
@@ -107,9 +158,16 @@ export default {
         
         await this.playAudio(audio_url);
         
+        // 记录已播放的音频文件
+        const filename = audio_url.replace('/static/', '');
+        this.playedAudioFiles.push(filename);
+        
         console.log('[App] 音频播放完成');
         this.aiStatus = 'idle';
         console.log('[App] 状态变更为: idle');
+        
+        // 清理音频文件
+        this.cleanupAudioFiles();
       } catch (error) {
         console.error('[App] 普通模式请求出错:', error);
         throw error;
@@ -176,6 +234,10 @@ export default {
               this.audioQueue.push(data.audio_url);
               console.log(`[App] 音频添加到队列, 当前队列长度: ${this.audioQueue.length}`);
               
+              // 记录已播放的音频文件
+              const filename = data.audio_url.replace('/static/', '');
+              this.playedAudioFiles.push(filename);
+              
               // 如果没有正在播放的音频，开始播放
               if (this.audioQueue.length === 1 && !this.isAudioPlaying) {
                 console.log('[App] 开始播放音频队列');
@@ -201,6 +263,8 @@ export default {
               if (this.audioQueue.length === 0 && !this.isAudioPlaying) {
                 this.aiStatus = 'idle';
                 console.log('[App] 状态变更为: idle');
+                // 清理音频文件
+                this.cleanupAudioFiles();
               }
               
               console.log(`[App] 流式请求完成, 总耗时: ${Date.now() - startTime}ms`);
@@ -248,6 +312,8 @@ export default {
         if (this.eventSource === null) {
           this.aiStatus = 'idle';
           console.log('[App] 状态变更为: idle');
+          // 清理音频文件
+          this.cleanupAudioFiles();
         }
         return;
       }
@@ -267,6 +333,8 @@ export default {
         if (this.eventSource === null) {
           this.aiStatus = 'idle';
           console.log('[App] 状态变更为: idle');
+          // 清理音频文件
+          this.cleanupAudioFiles();
         }
       }
     },
@@ -276,6 +344,7 @@ export default {
       console.log(`[App] 创建音频实例: ${url}`);
       return new Promise((resolve, reject) => {
         const audio = new Audio(url);
+        this.currentAudio = audio;
         
         audio.onloadeddata = () => {
           console.log(`[App] 音频数据加载完成，时长: ${audio.duration}秒`);
@@ -283,17 +352,20 @@ export default {
         
         audio.onended = () => {
           console.log('[App] 音频播放结束');
+          this.currentAudio = null;
           resolve();
         };
         
         audio.onerror = (error) => {
           console.error('[App] 音频加载错误:', error);
+          this.currentAudio = null;
           reject(error);
         };
         
         console.log('[App] 开始播放音频');
         audio.play().catch(error => {
           console.error('[App] 播放音频失败:', error);
+          this.currentAudio = null;
           reject(error);
         });
       });
@@ -301,6 +373,15 @@ export default {
   },
   created() {
     console.log('[App] 组件创建，初始状态: idle');
+  },
+  beforeUnmount() {
+    console.log('[App] 组件销毁前，清理资源');
+    this.stopAllAudio();
+    if (this.eventSource) {
+      this.eventSource.close();
+    }
+    // 最后一次清理音频文件
+    this.cleanupAudioFiles();
   }
 };
 </script>

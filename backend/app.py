@@ -3,6 +3,8 @@ import sys
 import uuid
 import json
 import logging
+import glob
+import re
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 
@@ -31,6 +33,9 @@ tts_helper = TTSHelper()
 
 # 保存会话历史的字典
 sessions = {}
+
+# 全局变量，用于记录已生成的音频文件
+audio_files = set()
 
 @app.route('/api/chat', methods=['POST'])
 def chat():
@@ -73,19 +78,26 @@ def chat():
         ai_response = response['choices'][0]['message']['content']
         logger.debug(f"AI回复内容: '{ai_response[:50]}...'")
         
+        # 优化文本格式，增加适当换行
+        ai_response = optimize_text_format(ai_response)
+        
         # 添加AI回复到历史记录
         sessions[session_id].append({"role": "assistant", "content": ai_response})
         logger.debug(f"添加AI回复到历史记录, 当前历史记录长度: {len(sessions[session_id])}")
         
-        # 使用TTS将回复转为语音
+        # 使用TTS将回复转为语音，增加语速为1.5
         audio_filename = f"{session_id}_{uuid.uuid4()}.mp3"
         audio_path = os.path.join(app.static_folder, audio_filename)
         logger.info(f"使用TTS生成语音, audio_filename={audio_filename}")
         
         tts_helper.text_to_speech(
             text=ai_response,
-            output_file=audio_path
+            output_file=audio_path,
+            speed=1.5  # 加快语速
         )
+        
+        # 记录音频文件
+        audio_files.add(audio_filename)
         
         logger.debug(f"返回聊天响应, audio_url=/static/{audio_filename}")
         return jsonify({
@@ -99,6 +111,28 @@ def chat():
         return jsonify({
             "error": str(e)
         }), 500
+
+def optimize_text_format(text):
+    """优化文本格式，增加适当换行，使其显示更美观"""
+    # 确保数字列表前有换行
+    text = re.sub(r'(\d+[\.\)、])\s*', r'\n\1 ', text)
+    
+    # 确保题目标题和解答之间有换行
+    text = re.sub(r'(问题[:：]|题目[:：]|解[:：]|答[:：])', r'\n\1', text)
+    
+    # 确保段落标题有换行
+    text = re.sub(r'^(第.*?[章节部篇].*?)$', r'\n\1\n', text, flags=re.MULTILINE)
+    
+    # 给长句子添加合理换行
+    text = re.sub(r'([。！？\.!?])\s*', r'\1\n', text)
+    
+    # 处理特殊的分隔符和标点
+    text = re.sub(r'[:：]\s*', r'：\n', text)
+    
+    # 合并连续的多个换行为最多两个换行
+    text = re.sub(r'\n\s*\n\s*\n', r'\n\n', text)
+    
+    return text.strip()
 
 @app.route('/api/status', methods=['GET'])
 def get_status():
@@ -139,6 +173,49 @@ def delete_session(session_id):
     return jsonify({
         "success": True,
         "message": "会话已删除"
+    })
+
+@app.route('/api/cleanup', methods=['POST'])
+def cleanup_audio():
+    """清理已经使用过的音频文件"""
+    logger.info("收到清理音频文件请求")
+    data = request.json
+    filenames = data.get('filenames', [])
+    
+    deleted_files = []
+    for filename in filenames:
+        if filename in audio_files:
+            file_path = os.path.join(app.static_folder, filename)
+            try:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                    deleted_files.append(filename)
+                    audio_files.remove(filename)
+                    logger.debug(f"已删除音频文件: {filename}")
+                else:
+                    logger.warning(f"文件不存在, 无法删除: {filename}")
+            except Exception as e:
+                logger.error(f"删除文件出错: {str(e)}")
+    
+    # 也可以清理所有过期文件
+    if data.get('clear_all', False):
+        try:
+            # 获取当前正在使用的文件之外的所有mp3文件
+            all_files = glob.glob(os.path.join(app.static_folder, '*.mp3'))
+            current_files = set([os.path.join(app.static_folder, f) for f in audio_files])
+            old_files = set(all_files) - current_files
+            
+            for file_path in old_files:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                    deleted_files.append(os.path.basename(file_path))
+                    logger.debug(f"已删除过期音频文件: {os.path.basename(file_path)}")
+        except Exception as e:
+            logger.error(f"批量删除过期文件出错: {str(e)}")
+    
+    return jsonify({
+        "success": True,
+        "deleted_files": deleted_files
     })
 
 if __name__ == '__main__':
