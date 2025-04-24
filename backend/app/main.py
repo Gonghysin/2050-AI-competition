@@ -1,36 +1,55 @@
+"""
+主应用模块
+
+FastAPI主应用入口和配置
+"""
+import sys
+import os
+from pathlib import Path
+
+# 添加项目根目录到路径
+sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
-from backend.app.api import chat
+from backend.app.api import router
+from backend.app.config.settings import settings
 
 # 创建FastAPI应用
 app = FastAPI(
-    title="AI知识竞答Agent API",
-    description="带有人设的聊天和答题API",
-    version="0.1.0"
+    title="AI答题系统",
+    description="具有人设(Role-Card)、可与用户闲聊、又能在用户提出挑战意图时自动进入答题工作流的智能Agent",
+    version="1.0.0"
 )
 
-# 配置CORS
+# 添加CORS中间件
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 允许所有来源，生产环境中应该限制
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# 包含API路由
-app.include_router(chat.router, prefix="/api", tags=["聊天"])
+# 注册API路由
+app.include_router(router)
 
-# 健康检查路由
+# 健康检查接口
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
+
+# 根路径重定向到文档
 @app.get("/")
 async def root():
-    return {
-        "status": "healthy",
-        "message": "AI知识竞答Agent API 正在运行",
-        "version": "0.1.0"
-    }
+    return {"message": "欢迎使用AI答题系统API，访问 /docs 查看API文档"}
 
 if __name__ == "__main__":
-    uvicorn.run("backend.app.main:app", host="0.0.0.0", port=8000, reload=True) 
+    uvicorn.run(
+        "backend.app.main:app",
+        host=settings.HOST,
+        port=settings.PORT,
+        reload=settings.DEBUG
+    ) 
