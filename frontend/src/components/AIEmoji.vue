@@ -5,11 +5,14 @@
         <span class="emoji-item">🐸</span>
         <span class="emoji-item">🙌</span>
         <span class="emoji-item">😭</span>
+        <span class="emoji-item">🎉</span>
+        <span class="emoji-item">👏</span>
       </div>
       <div v-else-if="status === 'thinking'" class="emoji-group">
         <span class="emoji-item">🐸</span>
         <span class="emoji-item animation-delay-1">✍️</span>
         <span class="emoji-item animation-delay-2">✍️</span>
+        <span class="emoji-item animation-delay-3">🤔</span>
         <div class="thinking-text">思考中...</div>
       </div>
       <div v-else-if="status === 'speaking'" class="emoji-group">
@@ -21,6 +24,7 @@
         <span class="emoji-item">🐸</span>
         <span class="emoji-item animation-rotate">🤣</span>
         <span class="emoji-item animation-pointing">👉</span>
+        <span class="emoji-item animation-shake">❌</span>
       </div>
     </div>
   </div>
@@ -52,8 +56,7 @@ export default {
   display: flex;
   justify-content: center;
   align-items: center;
-  height: 200px;
-  width: 200px;
+  height: auto;
   margin: 20px 0;
 }
 
@@ -61,36 +64,40 @@ export default {
   display: flex;
   justify-content: center;
   align-items: center;
-  height: 100%;
-  width: 100%;
-  border-radius: 50%;
+  padding: 30px 20px;
+  border-radius: 50px;
   background-color: #e9f5ff;
   box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
   transition: all 0.3s ease;
-  overflow: hidden;
   position: relative;
+  min-width: 120px;
+  min-height: 120px;
 }
 
 .emoji-group {
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
   align-items: center;
-  width: 100%;
-  height: 100%;
+  gap: 10px;
+  max-width: 300px;
+  padding: 10px;
 }
 
 .emoji-item {
-  font-size: 60px;
-  margin: 0 5px;
+  font-size: 48px;
   display: inline-block;
+  transform-origin: center;
 }
 
 .thinking-text {
   position: absolute;
-  bottom: 20px;
-  font-size: 24px;
+  bottom: 8px;
+  font-size: 18px;
   color: #333;
   font-weight: bold;
+  width: 100%;
+  text-align: center;
 }
 
 .emoji.idle {
@@ -99,6 +106,10 @@ export default {
 
 .emoji.idle .emoji-item:nth-child(2) {
   animation: float 2s ease-in-out infinite;
+}
+
+.emoji.idle .emoji-item:nth-child(4) {
+  animation: rotate 3s ease-in-out infinite;
 }
 
 .emoji.thinking {
@@ -118,23 +129,27 @@ export default {
   animation-delay: 0.4s !important;
 }
 
+.animation-delay-3 {
+  animation-delay: 0.6s !important;
+}
+
 .emoji.speaking {
   background-color: #e9fff0;
 }
 
 .emoji.speaking .emoji-item:nth-child(2) {
   animation: bounce 0.8s infinite;
-  font-size: 70px;
+  font-size: 56px;
 }
 
 .animation-hand-left {
   animation: handLeft 1s infinite;
-  margin-right: -8px;
+  margin-right: -4px;
 }
 
 .animation-hand-right {
   animation: handRight 1s infinite;
-  margin-left: -8px;
+  margin-left: -4px;
 }
 
 .emoji.error {
@@ -147,6 +162,10 @@ export default {
 
 .animation-pointing {
   animation: pointing 1s infinite;
+}
+
+.animation-shake {
+  animation: shake 0.5s infinite;
 }
 
 @keyframes float {
@@ -175,7 +194,7 @@ export default {
     transform: translateY(0);
   }
   50% {
-    transform: translateY(-10px);
+    transform: translateY(-8px);
   }
 }
 
@@ -184,7 +203,7 @@ export default {
     transform: translateY(0);
   }
   50% {
-    transform: translateY(-10px);
+    transform: translateY(-8px);
   }
 }
 
@@ -221,6 +240,18 @@ export default {
   }
   50% {
     transform: translateX(8px);
+  }
+}
+
+@keyframes shake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-5px);
+  }
+  75% {
+    transform: translateX(5px);
   }
 }
 </style> 
