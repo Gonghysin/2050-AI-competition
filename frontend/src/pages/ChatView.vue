@@ -215,9 +215,8 @@ export default {
     }
   },
   mounted() {
-    if (this.isAuthenticated) {
-      this.$store.dispatch('loadHistory');
-    }
+    // 清除之前的会话信息，显示欢迎界面
+    this.$store.commit('CLEAR_SESSION');
   }
 }
 </script>

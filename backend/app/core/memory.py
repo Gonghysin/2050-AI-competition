@@ -191,6 +191,28 @@ class MemoryManager:
             })
         
         return formatted_messages
+        
+    def clear_conversation_history(self, user_id: str) -> Optional[UserSession]:
+        """
+        清除用户的对话历史，但保留会话状态
+        
+        参数:
+            user_id: 用户ID
+            
+        返回:
+            更新后的会话对象，如果会话不存在则返回None
+        """
+        # 获取会话
+        session = self.get_session(user_id)
+        if not session:
+            return None
+        
+        # 清空对话历史
+        session.conversation = []
+        
+        # 保存会话
+        self.save_session(session)
+        return session
 
 # 创建记忆管理器单例
 memory_manager = MemoryManager() 

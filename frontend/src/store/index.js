@@ -1,9 +1,12 @@
 import { createStore } from 'vuex'
 import apiClient from '../api/client'
 
+// 确保每次页面加载时不保留之前的会话信息
+localStorage.removeItem('userId')
+
 export default createStore({
   state: {
-    userId: localStorage.getItem('userId') || null,
+    userId: null,
     messages: [],
     aiStatus: 'idle', // idle, thinking, quiz, happy, surprised
     currentQuestion: null,
@@ -290,8 +293,8 @@ export default createStore({
       }
     },
     logout({ commit }) {
-      console.log('[Action] 注销...')
       commit('CLEAR_SESSION')
+      // 不立即创建新会话，而是回到欢迎界面让用户手动点击创建
     }
   }
 }) 
