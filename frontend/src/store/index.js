@@ -240,6 +240,51 @@ export default createStore({
         commit('SET_LOADING', false)
       }
     },
+    async getNextQuestion({ commit, state }) {
+      try {
+        console.log('[Action] 直接获取下一题')
+        commit('SET_LOADING', true)
+        
+        // 调用获取下一题的API
+        const response = await apiClient.getNextQuestion(state.userId)
+        console.log('[Action] 下一题响应:', JSON.stringify(response))
+        
+        // 添加AI回复到列表
+        commit('ADD_MESSAGE', {
+          role: 'agent',
+          content: response.message,
+          timestamp: new Date().toISOString()
+        })
+        
+        // 根据后端返回的状态更新前端状态
+        if (response.status === 'quiz') {
+          console.log('[Action] 继续答题模式')
+          commit('SET_AI_STATUS', 'quiz')
+          
+          // 更新问题信息
+          if (response.quiz_info) {
+            console.log('[Action] 更新题目信息:', response.quiz_info)
+            commit('SET_CURRENT_QUESTION', response.quiz_info)
+            commit('SET_QUIZ_PROGRESS', response.quiz_info)
+          }
+        } else {
+          console.log('[Action] 答题结束，切换回聊天模式')
+          // 如果状态变为chat，清除问题信息
+          commit('SET_AI_STATUS', 'idle')
+          commit('SET_CURRENT_QUESTION', null)
+          commit('SET_QUIZ_PROGRESS', null)
+        }
+        
+        return response
+      } catch (error) {
+        console.error('[Action] 获取下一题失败:', error)
+        commit('SET_ERROR', error.message)
+        commit('SET_AI_STATUS', 'idle')
+        throw error
+      } finally {
+        commit('SET_LOADING', false)
+      }
+    },
     async loadHistory({ commit, state }) {
       if (!state.userId) return
       

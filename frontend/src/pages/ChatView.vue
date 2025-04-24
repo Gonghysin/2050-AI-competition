@@ -25,27 +25,28 @@
         <!-- 选择题 -->
         <div v-if="questionType === 'choice'" class="choice-question">
           <div v-for="(option, index) in getQuestionOptions()" :key="index" class="choice-option">
-            <label>
+            <label :class="{ selected: userAnswer === String.fromCharCode(65 + index) }">
               <input 
                 type="radio" 
                 :value="String.fromCharCode(65 + index)" 
                 v-model="userAnswer"
                 :disabled="loading"
               >
-              {{ String.fromCharCode(65 + index) }}. {{ option }}
+              <span class="option-label">{{ String.fromCharCode(65 + index) }}</span>
+              <span class="option-text">{{ option }}</span>
             </label>
           </div>
         </div>
         
         <!-- 判断题 -->
         <div v-else-if="questionType === 'tf'" class="tf-question">
-          <label>
-            <input type="radio" value="是" v-model="userAnswer" :disabled="loading">
-            是
+          <label :class="{ selected: userAnswer === 'T' }">
+            <input type="radio" value="T" v-model="userAnswer" :disabled="loading">
+            <span class="tf-button">是</span>
           </label>
-          <label>
-            <input type="radio" value="否" v-model="userAnswer" :disabled="loading">
-            否
+          <label :class="{ selected: userAnswer === 'F' }">
+            <input type="radio" value="F" v-model="userAnswer" :disabled="loading">
+            <span class="tf-button">否</span>
           </label>
         </div>
         
@@ -59,13 +60,31 @@
           ></textarea>
         </div>
         
-        <button 
-          @click="submitAnswer" 
-          class="btn submit-btn" 
-          :disabled="!userAnswer || loading"
-        >
-          提交答案
-        </button>
+        <!-- 答题按钮区域 -->
+        <div class="quiz-actions">
+          <button 
+            v-if="!showAnswer"
+            @click="submitAnswer" 
+            class="btn submit-btn" 
+            :disabled="!userAnswer || loading"
+          >
+            提交答案
+          </button>
+        
+          <!-- 显示答案和下一题按钮 -->
+          <div v-if="showAnswer" class="answer-section">
+            <div class="correct-answer">
+              <strong>正确答案:</strong> {{ getFormattedAnswer() }}
+            </div>
+            <button 
+              @click="getNextQuestion" 
+              class="btn next-btn"
+              :disabled="loading"
+            >
+              下一题
+            </button>
+          </div>
+        </div>
       </div>
     </div>
     
@@ -112,7 +131,8 @@ export default {
   data() {
     return {
       userMessage: '',
-      userAnswer: null
+      userAnswer: null,
+      showAnswer: false
     }
   },
   computed: {
@@ -155,6 +175,13 @@ export default {
     aiStatus(newStatus) {
       if (newStatus !== 'quiz') {
         this.userAnswer = null;
+        this.showAnswer = false;
+      }
+    },
+    currentQuestion(newVal) {
+      // 新题目时重置显示答案状态
+      if (newVal) {
+        this.showAnswer = false;
       }
     }
   },
@@ -185,16 +212,28 @@ export default {
       
       try {
         await this.$store.dispatch('submitAnswer', this.userAnswer);
-        this.userAnswer = null;
+        // 提交答案后显示正确答案
+        this.showAnswer = true;
       } catch (error) {
         console.error('提交答案失败:', error);
         alert('提交答案失败，请重试');
+      }
+    },
+    async getNextQuestion() {
+      try {
+        // 直接获取下一题
+        await this.$store.dispatch('getNextQuestion');
+        this.userAnswer = null;
+      } catch (error) {
+        console.error('获取下一题失败:', error);
+        alert('获取下一题失败，请重试');
       }
     },
     logout() {
       this.$store.dispatch('logout');
       this.userMessage = '';
       this.userAnswer = null;
+      this.showAnswer = false;
     },
     getQuestionText() {
       if (!this.currentQuestion) return '';
@@ -212,6 +251,25 @@ export default {
       }
       
       return this.currentQuestion.options;
+    },
+    getFormattedAnswer() {
+      if (!this.currentQuestion || !this.currentQuestion.answer) {
+        return '';
+      }
+      
+      const answer = this.currentQuestion.answer;
+      
+      // 根据题目类型格式化答案
+      if (this.questionType === 'choice' && this.currentQuestion.options) {
+        const index = answer.charCodeAt(0) - 65; // 将A,B,C,D转为0,1,2,3
+        if (index >= 0 && index < this.currentQuestion.options.length) {
+          return `${answer}. ${this.currentQuestion.options[index]}`;
+        }
+      } else if (this.questionType === 'tf') {
+        return answer === 'T' ? '是' : '否';
+      }
+      
+      return answer;
     }
   },
   mounted() {
@@ -311,66 +369,211 @@ export default {
 }
 
 .question-container {
-  background: #f9fbe7;
   padding: 20px;
+  margin: 15px 0;
+  border: 1px solid #e0e0e0;
   border-radius: 12px;
-  margin: 10px 0;
-  width: 100%;
-  max-width: 600px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  background-color: #f9f9f9;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.question-info {
+  font-weight: bold;
+  color: #4caf50;
+  margin-bottom: 12px;
+  font-size: 1.1rem;
+}
+
+.question-text {
+  font-size: 1.1rem;
+  line-height: 1.5;
+  margin-bottom: 20px;
+  padding: 0 5px;
+}
+
+.choice-question {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.choice-option label {
+  display: flex;
+  align-items: center;
+  padding: 12px 15px;
+  border-radius: 10px;
+  border: 1px solid #ddd;
+  background-color: #fff;
+  cursor: pointer;
+  transition: all 0.2s ease;
   
-  .question-info {
+  &:hover {
+    border-color: #4caf50;
+    background-color: #f1f8e9;
+  }
+  
+  &.selected {
+    border-color: #4caf50;
+    background-color: #e8f5e9;
+    box-shadow: 0 2px 4px rgba(76, 175, 80, 0.2);
+  }
+  
+  input[type="radio"] {
+    position: absolute;
+    opacity: 0;
+  }
+  
+  .option-label {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background-color: #4caf50;
+    color: white;
     font-weight: bold;
-    margin-bottom: 10px;
-    color: #4caf50;
+    margin-right: 15px;
+    flex-shrink: 0;
   }
   
-  .question-text {
-    margin-bottom: 15px;
-    font-size: 1.1rem;
-    line-height: 1.5;
+  .option-text {
+    font-size: 1rem;
   }
-  
-  .choice-question, .tf-question, .short-question {
-    margin: 15px 0;
-  }
-  
-  .choice-option {
-    margin-bottom: 10px;
-  }
+}
+
+.tf-question {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  margin-bottom: 20px;
   
   label {
-    display: block;
-    padding: 8px;
-    border-radius: 8px;
-    cursor: pointer;
-    text-align: left;
+    position: relative;
     
-    &:hover {
-      background: rgba(76, 175, 80, 0.1);
+    input[type="radio"] {
+      position: absolute;
+      opacity: 0;
     }
     
-    input {
-      margin-right: 10px;
+    .tf-button {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      width: 100px;
+      height: 50px;
+      border-radius: 25px;
+      background-color: #fff;
+      border: 1px solid #ddd;
+      font-size: 1.1rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      
+      &:hover {
+        border-color: #4caf50;
+        background-color: #f1f8e9;
+      }
+    }
+    
+    &.selected .tf-button {
+      border-color: #4caf50;
+      background-color: #4caf50;
+      color: white;
+      font-weight: bold;
+      box-shadow: 0 2px 4px rgba(76, 175, 80, 0.3);
     }
   }
+}
+
+.short-question {
+  margin-bottom: 20px;
   
   textarea {
     width: 100%;
-    padding: 10px;
+    padding: 12px;
     border: 1px solid #ddd;
-    border-radius: 8px;
+    border-radius: 10px;
     resize: vertical;
+    font-size: 1rem;
+    transition: border-color 0.2s ease;
     
     &:focus {
-      border-color: #4caf50;
       outline: none;
+      border-color: #4caf50;
+      box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.1);
     }
   }
+}
+
+.quiz-actions {
+  margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.submit-btn {
+  background-color: #4caf50;
+  color: white;
+  border: none;
+  padding: 12px 30px;
+  border-radius: 25px;
+  font-size: 1rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  min-width: 150px;
   
-  .submit-btn {
-    margin-top: 15px;
-    width: 100%;
+  &:hover:not(:disabled) {
+    background-color: #388e3c;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  }
+  
+  &:disabled {
+    background-color: #9e9e9e;
+    cursor: not-allowed;
+    opacity: 0.7;
+  }
+}
+
+.answer-section {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  margin-top: 15px;
+  align-items: center;
+}
+
+.correct-answer {
+  background-color: #e8f5e9;
+  border: 1px solid #c8e6c9;
+  padding: 15px;
+  border-radius: 10px;
+  margin-bottom: 20px;
+  font-size: 1rem;
+  width: 100%;
+  
+  strong {
+    color: #2e7d32;
+  }
+}
+
+.next-btn {
+  background-color: #2196f3;
+  color: white;
+  border: none;
+  padding: 12px 30px;
+  border-radius: 25px;
+  font-size: 1rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 150px;
+  
+  &:hover {
+    background-color: #1976d2;
+    box-shadow: 0 2px 8px rgba(33, 150, 243, 0.3);
   }
 }
 

@@ -358,25 +358,52 @@ class QuizWorkflow:
         # 构造带有反馈的响应，先返回当前题目的结果，不立即切换到下一题
         feedback_message = ""
         
+        # 格式化正确答案展示
+        correct_answer_text = ""
+        if question_type == "choice" and hasattr(question, 'options') and question.options:
+            index = ord(question.answer) - ord('A')
+            if 0 <= index < len(question.options):
+                correct_answer_text = f"【正确答案】{question.answer}: {question.options[index]}"
+        elif question_type == "tf":
+            correct_answer_text = f"【正确答案】{'是' if question.answer == 'T' else '否'}"
+        else:
+            correct_answer_text = f"【正确答案】{question.answer}"
+        
         # 根据是否答对添加不同的反馈文字
         if is_correct:
-            feedback_message = f"{reaction}\n\n{feedback}"
+            feedback_message = f"{reaction}\n\n{feedback}\n\n{correct_answer_text}"
         else:
-            feedback_message = f"{reaction}\n\n{feedback}"
-        
-        # 将解析添加到反馈中
-        if question.analysis and question.analysis.strip():
-            feedback_message += f"\n\n解析：{question.analysis}"
+            feedback_message = f"{reaction}\n\n{feedback}\n\n{correct_answer_text}"
         
         # 添加提示用户继续的信息
         if current_step > total_step:
             # 如果已完成所有题目，提示用户查看总成绩
-            feedback_message += "\n\n你已完成所有题目！请继续提交任意内容以查看最终成绩。"
+            feedback_message += "\n\n你已完成所有题目！点击\"下一题\"按钮查看最终成绩。"
             # 标记进度为答题结束，但保留当前步骤，方便下一次交互时调用end_quiz
             quiz_progress["state"] = "quiz_end"
+            
+            # 对于最后一道简答题，限制反馈长度不超过100字
+            if question_type == "short":
+                # 保留反馈开头和结尾部分，中间部分如果过长就截断
+                parts = feedback_message.split("\n\n")
+                if len(parts) > 2:
+                    reaction_part = parts[0]  # 保留反馈的第一部分（调侃）
+                    ending_part = parts[-1]  # 保留最后一部分（提示查看成绩）
+                    
+                    # 中间部分如果太长就截断
+                    middle_text = "\n\n".join(parts[1:-1])
+                    if len(middle_text) > 60:  # 预留40字给开头和结尾
+                        middle_text = middle_text[:57] + "..."
+                    
+                    # 重新组合
+                    feedback_message = f"{reaction_part}\n\n{middle_text}\n\n{ending_part}"
+                    
+                # 确保总长度不超过100
+                if len(feedback_message) > 100:
+                    feedback_message = feedback_message[:97] + "..."
         else:
             # 如果还有下一题，提示用户继续
-            feedback_message += "\n\n请继续提交任意内容以获取下一题。"
+            feedback_message += "\n\n点击\"下一题\"按钮继续答题。"
             # 标记进度为反馈状态
             quiz_progress["state"] = "quiz_feedback"
         
