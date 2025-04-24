@@ -44,6 +44,9 @@ export default createStore({
     ADD_MESSAGE(state, message) {
       state.messages.push(message)
       console.log(`[Store] 添加消息 [${message.role}]: ${message.content.substring(0, 50)}${message.content.length > 50 ? '...' : ''}`)
+      if (message.audio_url) {
+        console.log(`[Store] 消息包含音频URL: ${message.audio_url}`)
+      }
     },
     SET_MESSAGES(state, messages) {
       state.messages = messages
@@ -94,7 +97,8 @@ export default createStore({
         commit('ADD_MESSAGE', {
           role: 'agent',
           content: response.greeting,
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
+          audio_url: response.audio_url
         })
         commit('SET_AI_STATUS', 'idle')
         return response
@@ -127,7 +131,8 @@ export default createStore({
         commit('ADD_MESSAGE', {
           role: 'agent',
           content: response.message,
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
+          audio_url: response.audio_url
         })
         
         // 根据后端返回的状态设置前端状态
@@ -193,7 +198,8 @@ export default createStore({
         commit('ADD_MESSAGE', {
           role: 'agent',
           content: response.message,
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
+          audio_url: response.audio_url
         })
         
         // 根据后端返回的状态更新前端状态
@@ -253,7 +259,8 @@ export default createStore({
         commit('ADD_MESSAGE', {
           role: 'agent',
           content: response.message,
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
+          audio_url: response.audio_url
         })
         
         // 根据后端返回的状态更新前端状态

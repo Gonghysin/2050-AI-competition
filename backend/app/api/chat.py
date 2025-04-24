@@ -16,6 +16,7 @@ from backend.app.core.memory import memory_manager
 from backend.app.core.workflow import quiz_workflow
 from backend.app.utils.llm_client import llm_client
 from backend.app.config.role_cards import EVIL_FROG_DOCTOR, SMART_SENIOR_SISTER
+from backend.app.tools.tts import text_to_speech_url
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -94,7 +95,7 @@ async def send_message(request: MessageRequest):
         logger.info(f"答题工作流启动完成: {quiz_response.status}, 题目信息: {json.dumps(quiz_response.quiz_info.model_dump() if hasattr(quiz_response.quiz_info, 'model_dump') else quiz_response.quiz_info)}")
         
         # 将答题工作流的响应添加到历史记录
-        memory_manager.add_message(user_id, "agent", quiz_response.message)
+        memory_manager.add_message(user_id, "agent", quiz_response.message, quiz_response.audio_url)
         
         # 使用答题工作流的响应作为最终响应
         return quiz_response
@@ -113,8 +114,13 @@ async def send_message(request: MessageRequest):
     if response.quiz_info:
         logger.info(f"包含题目信息: {json.dumps(response.quiz_info.model_dump() if hasattr(response.quiz_info, 'model_dump') else response.quiz_info)}")
     
+    # 为LLM生成的回复添加语音URL
+    audio_url = text_to_speech_url(response.message)
+    response.audio_url = audio_url
+    logger.info(f"为回复生成语音URL: {audio_url or '生成失败'}")
+    
     # 添加AI回复到历史记录
-    memory_manager.add_message(user_id, "agent", response.message)
+    memory_manager.add_message(user_id, "agent", response.message, audio_url)
     
     # 检查状态是否变化
     if response.status != session.status:
@@ -128,7 +134,7 @@ async def send_message(request: MessageRequest):
             logger.info(f"答题工作流启动完成: {quiz_response.status}, 题目信息: {json.dumps(quiz_response.quiz_info.model_dump() if hasattr(quiz_response.quiz_info, 'model_dump') else quiz_response.quiz_info)}")
             
             # 将答题工作流的响应添加到历史记录
-            memory_manager.add_message(user_id, "agent", quiz_response.message)
+            memory_manager.add_message(user_id, "agent", quiz_response.message, quiz_response.audio_url)
             
             # 使用答题工作流的响应作为最终响应
             return quiz_response
@@ -173,13 +179,18 @@ async def create_session(request: SessionRequest):
     greeting = greeting_response["choices"][0]["message"]["content"]
     logger.info(f"生成问候语: {greeting[:50]}...")
     
+    # 为问候语生成语音URL
+    audio_url = text_to_speech_url(greeting)
+    logger.info(f"为问候语生成语音URL: {audio_url or '生成失败'}")
+    
     # 添加问候语到历史记录
-    memory_manager.add_message(user_id, "agent", greeting)
+    memory_manager.add_message(user_id, "agent", greeting, audio_url)
     
     return {
         "user_id": user_id,
         "role_card": role_card.model_dump(),
-        "greeting": greeting
+        "greeting": greeting,
+        "audio_url": audio_url
     }
 
 

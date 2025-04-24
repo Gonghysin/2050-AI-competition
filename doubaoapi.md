@@ -36,3 +36,4 @@ AppID/Token/Cluster 等信息可参考 控制台使用FAQ-Q1
 使用 HTTP Post 方式进行请求，返回的结果为 JSON 格式，需要进行解析
 因 json 格式无法直接携带二进制音频，音频经base64编码。使用base64解码后，即为二进制音频
 每次合成时 reqid 这个参数需要重新设置，且要保证唯一性（建议使用 UUID/GUID 等生成）
+

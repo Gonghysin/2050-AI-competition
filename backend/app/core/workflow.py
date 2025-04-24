@@ -23,6 +23,7 @@ from backend.app.utils.database import questions
 from backend.app.tools.extractors import extract_choice_question, extract_tf_question, extract_short_question
 from backend.app.tools.judge import ai_judge_correctness
 from backend.app.tools.reactions import user_correct_reaction, user_incorrect_reaction, overall_quiz_process_reaction
+from backend.app.tools.tts import text_to_speech_url
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -211,11 +212,16 @@ class QuizWorkflow:
         
         logger.info(f"题目准备完成，返回问题 - 步骤: {current_step}/{total_step}")
         
+        # 生成语音
+        audio_url = text_to_speech_url(question_prompt)
+        logger.info(f"问题语音生成: {audio_url or '失败'}")
+        
         # 创建响应对象
         response = AgentResponse(
             status="quiz",
             message=question_prompt,
-            quiz_info=quiz_info
+            quiz_info=quiz_info,
+            audio_url=audio_url
         )
         
         # 记录详细的返回内容
@@ -223,6 +229,7 @@ class QuizWorkflow:
         logger.info(f"  状态: {response.status}")
         logger.info(f"  消息: {response.message}")
         logger.info(f"  题目信息: {response.quiz_info}")
+        logger.info(f"  语音URL: {response.audio_url}")
         
         logger.info(f"===== 结束执行 next_question() - 用户[{user_id}] =====")
         return response
@@ -416,12 +423,18 @@ class QuizWorkflow:
             message=feedback_message,
             quiz_info=quiz_info
         )
+        
+        # 生成语音
+        audio_url = text_to_speech_url(feedback_message)
+        logger.info(f"反馈语音生成: {audio_url or '失败'}")
+        final_response.audio_url = audio_url
 
         # 记录返回详情
         logger.info(f"处理答案完成，最终返回响应:")
         logger.info(f"  状态: {final_response.status}")
         logger.info(f"  消息: {final_response.message[:100] if final_response.message else 'N/A'}...")
         logger.info(f"  题目信息: {final_response.quiz_info}")
+        logger.info(f"  语音URL: {final_response.audio_url}")
         logger.info(f"===== 结束执行 process_answer() - 用户[{user_id}] =====")
         
         return final_response
@@ -478,6 +491,11 @@ class QuizWorkflow:
             message=message,
             quiz_info=None
         )
+        
+        # 生成语音
+        audio_url = text_to_speech_url(message)
+        logger.info(f"结束语音生成: {audio_url or '失败'}")
+        response.audio_url = audio_url
         
         logger.info(f"===== 结束执行 end_quiz() - 用户[{user_id}] =====")
         return response

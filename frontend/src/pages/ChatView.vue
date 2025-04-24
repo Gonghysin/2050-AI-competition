@@ -14,6 +14,9 @@
     <div class="ai-output" v-if="isAuthenticated">
       <div class="ai-message">{{ currentAiMessage }}</div>
       
+      <!-- 隐藏的音频播放器 -->
+      <audio ref="audioPlayer" style="display: none;" autoplay></audio>
+      
       <!-- 答题模式下的问题展示 -->
       <div v-if="aiStatus === 'quiz' && currentQuestion" class="question-container">
         <div class="question-info">
@@ -183,9 +186,33 @@ export default {
       if (newVal) {
         this.showAnswer = false;
       }
+    },
+    // 监听消息变化，自动播放语音
+    messages(newMessages, oldMessages) {
+      if (newMessages.length > oldMessages.length) {
+        // 获取最新的消息
+        const latestMessage = newMessages[newMessages.length - 1];
+        
+        // 检查是否为AI消息且有语音URL
+        if (latestMessage.role === 'agent' && latestMessage.audio_url) {
+          this.playAudio(latestMessage.audio_url);
+        }
+      }
     }
   },
   methods: {
+    // 播放音频
+    playAudio(audioUrl) {
+      if (!audioUrl) return;
+      
+      const audioPlayer = this.$refs.audioPlayer;
+      if (audioPlayer) {
+        audioPlayer.src = audioUrl;
+        audioPlayer.play().catch(err => {
+          console.error('播放语音失败:', err);
+        });
+      }
+    },
     async createSession() {
       try {
         await this.$store.dispatch('createSession');

@@ -18,3 +18,4 @@ class AgentResponse(BaseModel):
     status: Literal["chat", "quiz"]
     message: str
     quiz_info: Optional[QuizInfo] = None
+    audio_url: Optional[str] = None  # TTS生成的语音URL

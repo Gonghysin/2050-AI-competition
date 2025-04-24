@@ -87,7 +87,7 @@ class MemoryManager:
             session_json
         )
     
-    def add_message(self, user_id: str, role: str, content: str) -> UserSession:
+    def add_message(self, user_id: str, role: str, content: str, audio_url: str = None) -> UserSession:
         """
         添加消息到会话
         
@@ -95,6 +95,7 @@ class MemoryManager:
             user_id: 用户ID
             role: 消息角色 "user" 或 "agent"
             content: 消息内容
+            audio_url: 语音URL，仅对agent角色有效
             
         返回:
             更新后的会话对象
@@ -108,7 +109,8 @@ class MemoryManager:
         message = Message(
             role=role,
             content=content,
-            timestamp=datetime.now()
+            timestamp=datetime.now(),
+            audio_url=audio_url if role == "agent" else None
         )
         session.conversation.append(message)
         
@@ -184,11 +186,16 @@ class MemoryManager:
         # 转换为LLM输入格式
         formatted_messages = []
         for msg in recent_messages:
-            role = "user" if msg.role == "user" else "model"  # 将agent角色转换为model
-            formatted_messages.append({
-                "role": role,
+            message_dict = {
+                "role": "user" if msg.role == "user" else "agent",
                 "content": msg.content
-            })
+            }
+            
+            # 为agent消息添加audio_url
+            if msg.role == "agent" and msg.audio_url:
+                message_dict["audio_url"] = msg.audio_url
+                
+            formatted_messages.append(message_dict)
         
         return formatted_messages
         

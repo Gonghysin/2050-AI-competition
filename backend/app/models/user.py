@@ -15,6 +15,7 @@ class Message(BaseModel):
     role: Literal["user", "agent"]
     content: str
     timestamp: datetime = Field(default_factory=datetime.now)
+    audio_url: Optional[str] = None  # 消息的语音URL，仅对agent消息有效
     
 class UserSession(BaseModel):
     """用户会话模型"""
