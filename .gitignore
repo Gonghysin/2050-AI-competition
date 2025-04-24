@@ -172,3 +172,9 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# 音频文件
+*.mp3
+
+# Node.js 依赖目录
+node_modules/
