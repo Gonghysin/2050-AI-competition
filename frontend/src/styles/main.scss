@@ -1,0 +1,155 @@
+// 变量
+$primary-color: #4caf50;
+$secondary-color: #ff5722;
+$background-color: #f5f7fa;
+$chat-bg-color: #fff;
+$user-bubble-color: #e3f2fd;
+$agent-bubble-color: #f1f8e9;
+$text-color: #333;
+$light-text-color: #757575;
+$border-radius: 12px;
+$shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+$transition: all 0.3s ease;
+
+// 全局样式
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Helvetica Neue', Arial, sans-serif;
+  color: $text-color;
+  line-height: 1.6;
+}
+
+.btn {
+  display: inline-block;
+  padding: 10px 20px;
+  background: $primary-color;
+  color: white;
+  border: none;
+  border-radius: $border-radius;
+  cursor: pointer;
+  font-size: 16px;
+  transition: $transition;
+  
+  &:hover {
+    background: darken($primary-color, 10%);
+    transform: translateY(-2px);
+  }
+  
+  &:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+    transform: none;
+  }
+}
+
+input, textarea {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #ddd;
+  border-radius: $border-radius;
+  font-size: 16px;
+  transition: $transition;
+  
+  &:focus {
+    border-color: $primary-color;
+    outline: none;
+    box-shadow: 0 0 0 2px rgba($primary-color, 0.2);
+  }
+}
+
+// 动画
+@keyframes bounce {
+  0%, 20%, 50%, 80%, 100% {
+    transform: translateY(0);
+  }
+  40% {
+    transform: translateY(-20px);
+  }
+  60% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes rotate {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes shake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  10%, 30%, 50%, 70%, 90% {
+    transform: translateX(-5px);
+  }
+  20%, 40%, 60%, 80% {
+    transform: translateX(5px);
+  }
+}
+
+// 消息气泡
+.message-bubble {
+  padding: 12px 16px;
+  border-radius: $border-radius;
+  margin-bottom: 10px;
+  max-width: 80%;
+  position: relative;
+  
+  &.user {
+    background-color: $user-bubble-color;
+    align-self: flex-end;
+    margin-left: auto;
+  }
+  
+  &.agent {
+    background-color: $agent-bubble-color;
+    align-self: flex-start;
+    margin-right: auto;
+  }
+}
+
+// Emoji动画
+.emoji-animation {
+  font-size: 4rem;
+  margin-bottom: 20px;
+  display: inline-block;
+  
+  &.idle {
+    animation: pulse 2s infinite;
+  }
+  
+  &.thinking {
+    animation: rotate 1.5s infinite linear;
+  }
+  
+  &.happy {
+    animation: bounce 2s infinite;
+  }
+  
+  &.surprised {
+    animation: shake 0.8s;
+  }
+  
+  &.quiz {
+    animation: pulse 1s infinite alternate;
+  }
+} 
