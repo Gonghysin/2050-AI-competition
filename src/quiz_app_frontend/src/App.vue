@@ -23,6 +23,7 @@
       <div v-else-if="!$store.state.quizStarted" class="welcome-screen">
         <h2>欢迎参加AI知识竞答!</h2>
         <p>测试你对人工智能的了解程度，共{{ $store.state.questions.length }}道题。</p>
+        <p class="note">注意：语音朗读功能可能暂时不可用，但不影响答题。</p>
         <button @click="startQuiz" class="start-button">开始答题</button>
       </div>
       
@@ -156,33 +157,44 @@ export default {
     }
   },
   computed: {
+    audioEnabled() {
+      return this.$store.state.audioEnabled;
+    },
     isCurrentAnswerCorrect() {
-      const currentQuestion = this.$store.getters.currentQuestion
-      const userAnswer = this.$store.state.userAnswers[this.$store.state.currentQuestionIndex]
+      const currentQuestion = this.$store.getters.currentQuestion;
+      if (!currentQuestion) return false;
       
-      if (!currentQuestion || userAnswer === undefined) return false
+      const questionId = currentQuestion.id;
+      const feedback = this.$store.getters.getFeedback(questionId);
       
-      if (currentQuestion.type === 'simple_answer') {
-        return userAnswer.trim().toLowerCase() === currentQuestion.correctAnswer.trim().toLowerCase()
-      }
-      
-      return userAnswer === currentQuestion.correctAnswer
+      return feedback && feedback.isCorrect;
     },
     isLastQuestion() {
-      return this.$store.state.currentQuestionIndex === this.$store.state.questions.length - 1
+      return this.$store.getters.isLastQuestion;
     }
   },
   methods: {
     startQuiz() {
-      this.$store.commit('RESET_QUIZ')
-      this.$store.dispatch('fetchQuestions')
+      // 重置并获取题目
+      this.$store.commit('RESET_QUIZ');
+      this.$store.dispatch('fetchQuestions').then(() => {
+        // 获取题目成功后启动测验
+        this.$store.commit('START_QUIZ');
+        console.log('测验已启动，quizStarted =', this.$store.state.quizStarted);
+      });
     },
+    
     restartQuiz() {
-      this.$store.commit('RESET_QUIZ')
-      this.$store.dispatch('fetchQuestions')
+      // 重置并获取题目
+      this.$store.commit('RESET_QUIZ');
+      this.$store.dispatch('fetchQuestions').then(() => {
+        // 获取题目成功后启动测验
+        this.$store.commit('START_QUIZ');
+      });
     },
+    
     submitAnswer(answer) {
-      if (this.$store.state.feedbackShown) return
+      if (this.$store.state.feedbackShown) return;
       
       // 使用store中的方法
       const currentQuestion = this.$store.getters.currentQuestion;
@@ -193,6 +205,9 @@ export default {
             questionId: currentQuestion.id, 
             answer: answer 
           });
+          
+          // 显示反馈
+          this.$store.commit('SET_FEEDBACK_SHOWN', true);
           
           // 获取答案反馈
           this.$store.dispatch('submitAnswer', {
@@ -221,6 +236,18 @@ export default {
         
         if (!currentQuestion.audio) {
           console.warn('问题没有音频数据');
+          return;
+        }
+        
+        // 如果TTS服务有错误，显示错误消息但不影响应用继续使用
+        if (currentQuestion.audio.error) {
+          console.warn('TTS服务错误:', currentQuestion.audio.error);
+          return;
+        }
+        
+        // 如果音频数据为空，跳过播放
+        if (!currentQuestion.audio.audio_base64 && !currentQuestion.audio.file_path) {
+          console.warn('音频数据为空');
           return;
         }
         
@@ -289,6 +316,18 @@ export default {
       console.log('找到的反馈:', feedback);
       
       if (feedback && feedback.audio && this.$store.state.audioEnabled) {
+        // 如果TTS服务有错误，显示错误消息但不影响应用继续使用
+        if (feedback.audio.error) {
+          console.warn('TTS服务错误:', feedback.audio.error);
+          return;
+        }
+        
+        // 如果音频数据为空，跳过播放
+        if (!feedback.audio.audio_base64 && !feedback.audio.file_path) {
+          console.warn('音频数据为空');
+          return;
+        }
+        
         const audioElement = this.$refs.feedbackAudio;
         if (audioElement) {
           try {
@@ -344,11 +383,15 @@ export default {
     },
     
     nextQuestion() {
+      // 隐藏当前反馈
+      this.$store.commit('SET_FEEDBACK_SHOWN', false);
+      this.answerInput = '';
+      
       if (this.isLastQuestion) {
-        this.$store.commit('SET_QUIZ_COMPLETED', true)
-        this.$store.dispatch('getFinalScore')
+        this.$store.commit('SET_QUIZ_COMPLETED', true);
+        this.$store.dispatch('getFinalScore');
       } else {
-        this.$store.commit('NEXT_QUESTION')
+        this.$store.commit('NEXT_QUESTION');
         // 在切换到下一题后播放问题音频
         this.$nextTick(() => {
           this.playQuestionAudio();
@@ -369,6 +412,40 @@ export default {
       }
       
       return userAnswer === question.correctAnswer
+    },
+    
+    toggleAudio() {
+      this.$store.commit('toggleAudio');
+    },
+    
+    testAudio() {
+      console.log('测试音频播放...');
+      const audioElement = this.$refs.testAudio;
+      if (audioElement) {
+        audioElement.src = this.testAudioData;
+        audioElement.onloadeddata = () => {
+          console.log('测试音频已加载');
+        };
+        audioElement.onplay = () => {
+          console.log('测试音频开始播放');
+        };
+        audioElement.onerror = (e) => {
+          console.error('测试音频加载失败:', e);
+        };
+        
+        const playPromise = audioElement.play();
+        if (playPromise !== undefined) {
+          playPromise
+            .then(() => {
+              console.log('测试音频播放成功');
+              alert('如果您能听到声音，说明音频功能正常！');
+            })
+            .catch(e => {
+              console.error('无法播放测试音频:', e);
+              alert('无法播放音频: ' + e.message);
+            });
+        }
+      }
     }
   },
   watch: {
@@ -526,6 +603,12 @@ main {
 .welcome-screen p {
   margin-bottom: 30px;
   font-size: 18px;
+}
+
+.note {
+  margin-bottom: 30px;
+  font-size: 14px;
+  color: #666;
 }
 
 .start-button, .restart-button {

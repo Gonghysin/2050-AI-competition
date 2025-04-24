@@ -1,7 +1,7 @@
 import { createStore } from 'vuex'
 import axios from 'axios'
 
-const API_BASE_URL = 'http://localhost:5000/api'
+const API_BASE_URL = 'http://localhost:5001/api'
 
 export default createStore({
   state: {
@@ -15,7 +15,9 @@ export default createStore({
     finalFeedback: '',
     finalFeedbackAudio: null,
     correctCount: 0,
-    audioEnabled: true
+    audioEnabled: true,
+    quizStarted: false,
+    feedbackShown: false
   },
   
   getters: {
@@ -77,6 +79,8 @@ export default createStore({
       state.userAnswers = {}
       state.feedbacks = {}
       state.quizCompleted = false
+      state.quizStarted = false
+      state.feedbackShown = false
       state.finalFeedback = ''
       state.finalFeedbackAudio = null
       state.correctCount = 0
@@ -90,6 +94,14 @@ export default createStore({
     },
     toggleAudio(state) {
       state.audioEnabled = !state.audioEnabled;
+    },
+    START_QUIZ(state) {
+      state.quizStarted = true;
+      state.quizCompleted = false;
+      state.currentQuestionIndex = 0;
+    },
+    SET_FEEDBACK_SHOWN(state, shown) {
+      state.feedbackShown = shown;
     }
   },
   
@@ -100,8 +112,25 @@ export default createStore({
       
       try {
         const response = await axios.get(`${API_BASE_URL}/questions`)
+        console.log('API响应:', response.data);
+        
         if (response.data.success) {
-          commit('SET_QUESTIONS', response.data.questions)
+          // 标准化问题数据
+          const questions = response.data.questions.map(q => {
+            // 转换数据以匹配前端期望的格式
+            return {
+              id: q.id,
+              type: q.type,
+              question: q.question,
+              correctAnswer: q.type === 'choice' ? q.answer : 
+                            (q.type === 'judgment' ? (q.answer === '是' || q.answer === '正确' || q.answer === 'true') : q.answer),
+              options: q.options || [],
+              explanation: q.explanation || '暂无解释'
+            };
+          });
+          
+          console.log('处理后的题目:', questions);
+          commit('SET_QUESTIONS', questions)
         } else {
           commit('SET_ERROR', '获取题目失败')
         }
@@ -113,7 +142,7 @@ export default createStore({
       }
     },
     
-    async submitAnswer({ commit, state }, { questionId, answer, questionType, question, correctAnswer }) {
+    async submitAnswer({ commit }, { questionId, answer, questionType, question, correctAnswer }) {
       commit('SET_USER_ANSWER', { questionId, answer })
       
       try {

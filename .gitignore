@@ -182,3 +182,5 @@ yarn-error.log
 .npm/
 .yarn/
 .pnp.*
+# 音频文件
+*.mp3

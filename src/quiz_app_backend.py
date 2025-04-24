@@ -133,7 +133,12 @@ def generate_question_audio(question_text):
         }
     except Exception as e:
         print(f"生成音频失败: {str(e)}")
-        return None
+        # 返回空值而不是None，这样前端可以更容易处理
+        return {
+            'file_path': '',
+            'audio_base64': '',
+            'error': f"TTS服务暂时不可用: {str(e)}"
+        }
 
 # API路由
 @app.route('/api/questions', methods=['GET'])
@@ -231,4 +236,4 @@ def final_score():
     })
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000) 
+    app.run(debug=True, port=5001) 
