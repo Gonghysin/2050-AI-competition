@@ -1,6 +1,6 @@
 import axios from 'axios'
 
-const API_URL = 'http://localhost:8000/api'
+const API_URL = process.env.VUE_APP_API_URL || 'http://localhost:8000/api'
 
 const apiClient = axios.create({
   baseURL: API_URL,
@@ -10,9 +10,55 @@ const apiClient = axios.create({
   }
 })
 
+// 响应拦截器，只处理JSON字符串的格式化解析
+apiClient.interceptors.response.use(response => {
+  // 检查是否有message字段且看起来像JSON字符串
+  if (response.data && response.data.message) {
+    try {
+      // 如果消息中包含代码块，尝试从中提取JSON
+      if (response.data.message.includes('```json') && response.data.message.includes('```')) {
+        const jsonMatch = response.data.message.match(/```json([\s\S]*?)```/)
+        if (jsonMatch && jsonMatch[1]) {
+          const parsedJson = JSON.parse(jsonMatch[1].trim())
+          if (parsedJson.message) {
+            // 替换原始message
+            response.data.message = parsedJson.message
+            
+            // 如果有其他字段，也复制过来
+            if (parsedJson.status) {
+              response.data.status = parsedJson.status
+            }
+            if (parsedJson.quiz_info) {
+              response.data.quiz_info = parsedJson.quiz_info
+            }
+          }
+        }
+      } 
+      // 如果整个message就是一个JSON字符串
+      else if (response.data.message.trim().startsWith('{') && response.data.message.trim().endsWith('}')) {
+        const parsedJson = JSON.parse(response.data.message)
+        if (parsedJson.message) {
+          // 更新响应对象
+          response.data.message = parsedJson.message
+          if (parsedJson.status) {
+            response.data.status = parsedJson.status
+          }
+          if (parsedJson.quiz_info) {
+            response.data.quiz_info = parsedJson.quiz_info
+          }
+        }
+      }
+    } catch (error) {
+      console.error('解析JSON响应失败:', error)
+    }
+  }
+  
+  return response
+})
+
 export default {
   // 创建聊天会话
-  async createSession(roleCardId = 'evil_frog') {
+  async createSession(roleCardId = process.env.VUE_APP_DEFAULT_ROLE || 'evil_frog') {
     const response = await apiClient.post('/chat/create_session', {
       role_card_id: roleCardId
     })
@@ -25,6 +71,7 @@ export default {
       user_id: userId,
       message
     })
+    
     return response.data
   },
   
@@ -48,11 +95,16 @@ export default {
   
   // 开始答题
   async startQuiz(userId, totalQuestions = 3) {
-    const response = await apiClient.post('/quiz/start', {
-      user_id: userId,
-      total_questions: totalQuestions
-    })
-    return response.data
+    try {
+      const response = await apiClient.post('/quiz/start', {
+        user_id: userId,
+        total_questions: totalQuestions
+      })
+      return response.data
+    } catch (error) {
+      console.error('无法启动答题:', error);
+      throw error;
+    }
   },
   
   // 提交答案

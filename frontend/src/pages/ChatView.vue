@@ -2,88 +2,92 @@
   <div class="chat-container">
     <div class="chat-header">
       <h1>邪恶青蛙博士</h1>
-      <div v-if="isAuthenticated" class="header-actions">
-        <button @click="startNewQuiz" class="btn quiz-btn">开始答题</button>
-        <button @click="logout" class="btn logout-btn">重置</button>
-      </div>
+      <button v-if="isAuthenticated" @click="logout" class="btn logout-btn">重置</button>
     </div>
     
+    <!-- AI表情区域放在上方 -->
     <div class="emoji-section">
       <emoji-animation :status="aiStatus" />
     </div>
     
-    <div class="messages-container" ref="messagesContainer">
-      <div v-if="!isAuthenticated" class="welcome-screen">
-        <h2>欢迎来到AI答题系统</h2>
-        <p>与邪恶青蛙博士聊天，或者挑战他的题目！</p>
-        <button @click="createSession" class="btn start-btn">开始聊天</button>
-      </div>
+    <!-- AI输出区域 -->
+    <div class="ai-output" v-if="isAuthenticated">
+      <div class="ai-message">{{ currentAiMessage }}</div>
       
-      <template v-else>
-        <chat-message
-          v-for="(message, index) in messages"
-          :key="index"
-          :content="message.content"
-          :role="message.role"
-          :timestamp="message.timestamp"
-        />
-        
-        <!-- 答题模式下的问题展示 -->
-        <div v-if="aiStatus === 'quiz' && currentQuestion" class="question-container">
-          <div class="question-info">
-            第 {{ currentQuestion.step }}/{{ currentQuestion.total }} 题
-          </div>
-          
-          <!-- 选择题 -->
-          <div v-if="currentQuestion.question_type === 'choice'" class="choice-question">
-            <div v-for="(option, index) in currentQuestion.options" :key="index" class="choice-option">
-              <label>
-                <input 
-                  type="radio" 
-                  :value="String.fromCharCode(65 + index)" 
-                  v-model="userAnswer"
-                  :disabled="loading"
-                >
-                {{ String.fromCharCode(65 + index) }}. {{ option }}
-              </label>
-            </div>
-          </div>
-          
-          <!-- 判断题 -->
-          <div v-else-if="currentQuestion.question_type === 'tf'" class="tf-question">
-            <label>
-              <input type="radio" value="是" v-model="userAnswer" :disabled="loading">
-              是
-            </label>
-            <label>
-              <input type="radio" value="否" v-model="userAnswer" :disabled="loading">
-              否
-            </label>
-          </div>
-          
-          <button 
-            @click="submitAnswer" 
-            class="btn submit-btn" 
-            :disabled="!userAnswer || loading"
-          >
-            提交答案
-          </button>
+      <!-- 答题模式下的问题展示 -->
+      <div v-if="aiStatus === 'quiz' && currentQuestion" class="question-container">
+        <div class="question-info">
+          第 {{ currentQuestion.step || 1 }}/{{ currentQuestion.total || 3 }} 题
         </div>
-      </template>
+        
+        <div class="question-text">{{ getQuestionText() }}</div>
+        
+        <!-- 选择题 -->
+        <div v-if="questionType === 'choice'" class="choice-question">
+          <div v-for="(option, index) in getQuestionOptions()" :key="index" class="choice-option">
+            <label>
+              <input 
+                type="radio" 
+                :value="String.fromCharCode(65 + index)" 
+                v-model="userAnswer"
+                :disabled="loading"
+              >
+              {{ String.fromCharCode(65 + index) }}. {{ option }}
+            </label>
+          </div>
+        </div>
+        
+        <!-- 判断题 -->
+        <div v-else-if="questionType === 'tf'" class="tf-question">
+          <label>
+            <input type="radio" value="是" v-model="userAnswer" :disabled="loading">
+            是
+          </label>
+          <label>
+            <input type="radio" value="否" v-model="userAnswer" :disabled="loading">
+            否
+          </label>
+        </div>
+        
+        <!-- 简答题 -->
+        <div v-else class="short-question">
+          <textarea 
+            v-model="userAnswer" 
+            placeholder="请输入你的答案..." 
+            rows="3"
+            :disabled="loading"
+          ></textarea>
+        </div>
+        
+        <button 
+          @click="submitAnswer" 
+          class="btn submit-btn" 
+          :disabled="!userAnswer || loading"
+        >
+          提交答案
+        </button>
+      </div>
     </div>
     
-    <div class="input-container" v-if="isAuthenticated && aiStatus !== 'quiz'">
+    <div v-if="!isAuthenticated" class="welcome-screen">
+      <h2>欢迎来到AI答题系统</h2>
+      <p>与邪恶青蛙博士聊天，或者挑战他的题目！</p>
+      <button @click="createSession" class="btn start-btn">开始聊天</button>
+    </div>
+    
+    <!-- 用户输入区域 -->
+    <div class="input-container" v-if="isAuthenticated">
       <textarea 
         v-model="userMessage" 
-        placeholder="输入你想说的话..." 
+        :placeholder="aiStatus === 'quiz' ? '请在上方选择答案并提交' : '输入你想说的话...'" 
         @keyup.enter="sendMessage"
-        :disabled="loading"
+        :disabled="loading || aiStatus === 'quiz'"
         rows="3"
       ></textarea>
       <button 
         @click="sendMessage" 
         class="btn send-btn" 
-        :disabled="!userMessage.trim() || loading"
+        :disabled="!userMessage.trim() || loading || aiStatus === 'quiz'"
       >
         发送
       </button>
@@ -99,13 +103,11 @@
 <script>
 import { mapGetters, mapState } from 'vuex'
 import EmojiAnimation from '../components/EmojiAnimation.vue'
-import ChatMessage from '../components/ChatMessage.vue'
 
 export default {
   name: 'ChatView',
   components: {
-    EmojiAnimation,
-    ChatMessage
+    EmojiAnimation
   },
   data() {
     return {
@@ -117,20 +119,39 @@ export default {
     ...mapState([
       'loading',
       'currentQuestion',
-      'error'
+      'error',
+      'messages'
     ]),
     ...mapGetters([
       'isAuthenticated',
-      'aiStatus',
-      'messages'
-    ])
+      'aiStatus'
+    ]),
+    currentAiMessage() {
+      // 获取最后一条AI消息
+      const aiMessages = this.messages.filter(msg => msg.role === 'agent');
+      if (aiMessages.length > 0) {
+        return aiMessages[aiMessages.length - 1].content;
+      }
+      return '';
+    },
+    questionType() {
+      if (!this.currentQuestion) return 'choice';
+      
+      // 从currentQuestion或quiz_info中确定题目类型
+      if (this.currentQuestion.question_type) {
+        return this.currentQuestion.question_type;
+      }
+      
+      // 如果有options但没有明确类型，判断为选择题
+      if (this.currentQuestion.options && this.currentQuestion.options.length > 0) {
+        return 'choice';
+      }
+      
+      // 默认为简答题
+      return 'short';
+    }
   },
   watch: {
-    messages() {
-      this.$nextTick(() => {
-        this.scrollToBottom();
-      });
-    },
     aiStatus(newStatus) {
       if (newStatus !== 'quiz') {
         this.userAnswer = null;
@@ -141,7 +162,6 @@ export default {
     async createSession() {
       try {
         await this.$store.dispatch('createSession');
-        this.scrollToBottom();
       } catch (error) {
         console.error('创建会话失败:', error);
         alert('创建会话失败，请重试');
@@ -155,7 +175,6 @@ export default {
       
       try {
         await this.$store.dispatch('sendMessage', message);
-        this.scrollToBottom();
       } catch (error) {
         console.error('发送消息失败:', error);
         alert('发送消息失败，请重试');
@@ -167,21 +186,9 @@ export default {
       try {
         await this.$store.dispatch('submitAnswer', this.userAnswer);
         this.userAnswer = null;
-        this.scrollToBottom();
       } catch (error) {
         console.error('提交答案失败:', error);
         alert('提交答案失败，请重试');
-      }
-    },
-    async startNewQuiz() {
-      try {
-        const userId = this.$store.state.userId;
-        if (!userId) return;
-        
-        await this.$store.dispatch('sendMessage', '我想挑战一下你的题目');
-      } catch (error) {
-        console.error('开始答题失败:', error);
-        alert('开始答题失败，请重试');
       }
     },
     logout() {
@@ -189,11 +196,22 @@ export default {
       this.userMessage = '';
       this.userAnswer = null;
     },
-    scrollToBottom() {
-      const container = this.$refs.messagesContainer;
-      if (container) {
-        container.scrollTop = container.scrollHeight;
+    getQuestionText() {
+      if (!this.currentQuestion) return '';
+      
+      // 尝试从quiz_info中获取问题文本
+      if (this.currentQuestion.question) {
+        return this.currentQuestion.question;
       }
+      
+      return '请回答下面的问题';
+    },
+    getQuestionOptions() {
+      if (!this.currentQuestion || !this.currentQuestion.options) {
+        return [];
+      }
+      
+      return this.currentQuestion.options;
     }
   },
   mounted() {
@@ -230,19 +248,6 @@ export default {
     font-size: 1.5rem;
   }
   
-  .header-actions {
-    display: flex;
-    gap: 10px;
-  }
-  
-  .quiz-btn {
-    background: #ff9800;
-    
-    &:hover {
-      background: darken(#ff9800, 10%);
-    }
-  }
-  
   .logout-btn {
     background: #f44336;
     
@@ -253,36 +258,56 @@ export default {
 }
 
 .emoji-section {
+  padding: 20px 0;
   background: #f5f5f5;
   border-bottom: 1px solid #e0e0e0;
+  text-align: center;
 }
 
-.messages-container {
+.ai-output {
   flex: 1;
-  overflow-y: auto;
   padding: 20px;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
   
-  .welcome-screen {
+  .ai-message {
+    font-size: 1.1rem;
+    line-height: 1.6;
+    padding: 16px;
+    background: #f1f8e9;
+    border-radius: 12px;
+    max-width: 90%;
+    margin-bottom: 20px;
     text-align: center;
-    margin: auto;
-    padding: 40px 20px;
-    
-    h2 {
-      margin-top: 0;
-      color: #4caf50;
-    }
-    
-    p {
-      margin-bottom: 30px;
-      color: #757575;
-    }
-    
-    .start-btn {
-      padding: 12px 30px;
-      font-size: 1.1rem;
-    }
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  }
+}
+
+.welcome-screen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  padding: 20px;
+  
+  h2 {
+    margin-top: 0;
+    color: #4caf50;
+  }
+  
+  p {
+    margin-bottom: 30px;
+    color: #757575;
+  }
+  
+  .start-btn {
+    padding: 12px 30px;
+    font-size: 1.1rem;
   }
 }
 
@@ -290,7 +315,9 @@ export default {
   background: #f9fbe7;
   padding: 20px;
   border-radius: 12px;
-  margin: 20px 0;
+  margin: 10px 0;
+  width: 100%;
+  max-width: 600px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   
   .question-info {
@@ -299,7 +326,13 @@ export default {
     color: #4caf50;
   }
   
-  .choice-question, .tf-question {
+  .question-text {
+    margin-bottom: 15px;
+    font-size: 1.1rem;
+    line-height: 1.5;
+  }
+  
+  .choice-question, .tf-question, .short-question {
     margin: 15px 0;
   }
   
@@ -312,6 +345,7 @@ export default {
     padding: 8px;
     border-radius: 8px;
     cursor: pointer;
+    text-align: left;
     
     &:hover {
       background: rgba(76, 175, 80, 0.1);
@@ -319,6 +353,19 @@ export default {
     
     input {
       margin-right: 10px;
+    }
+  }
+  
+  textarea {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    resize: vertical;
+    
+    &:focus {
+      border-color: #4caf50;
+      outline: none;
     }
   }
   
@@ -346,6 +393,11 @@ export default {
     &:focus {
       outline: none;
       border-color: #4caf50;
+    }
+    
+    &:disabled {
+      background: #eee;
+      color: #999;
     }
   }
   
