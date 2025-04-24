@@ -30,4 +30,3 @@ TTS模块：./src/test_tts.py
 题库：./src/data/evil_frog_quiz_database.json
 
 123
-我是谁
