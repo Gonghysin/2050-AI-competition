@@ -1,121 +1,99 @@
-# -_-
+# AI对话表情助手
 
-AI助手moudel：
-./my_code_repository/AI_helper/yunwu_helper.py
+一个集成AI对话、TTS语音和表情展示的交互式网站。
 
-后端：python
+## 项目概述
 
-前段：vue
+本项目是一个交互式AI对话网站，具有以下主要特点：
 
-TTS：方舟豆包TTS。调用方法:
-1. 接口说明
-接口地址为 https://openspeech.bytedance.com/api/v1/tts
+1. **中央emoji表情**：根据AI不同状态（思考中、回复中、空闲、错误）展示不同的emoji表情
+2. **字幕式回复**：AI回复不使用聊天气泡，而是以字幕形式在emoji下方显示
+3. **语音播放**：将AI回复转换为语音并自动播放
+4. **流式交互**：支持流式文本生成和分段TTS语音生成
 
-2. 身份认证
-认证方式采用 Bearer Token.
+## 项目结构
 
-1)需要在请求的 Header 中填入"Authorization":"Bearer;${token}"
+- `backend/`: 后端代码
+  - `app.py`: 普通模式API服务
+  - `stream_app.py`: 流式模式API服务
+  - `run.py`: 启动脚本
+  - `API_DOCS.md`: API文档
+  - `static/`: 生成的语音文件存储目录
+  
+- `frontend/`: 前端代码
+  - `src/`: 源代码目录
+    - `components/`: Vue组件
+      - `AIEmoji.vue`: AI表情组件
+      - `SubtitleDisplay.vue`: 字幕显示组件
+      - `UserInput.vue`: 用户输入组件
+    - `App.vue`: 主应用组件
+    - `main.js`: 入口文件
+  
+- `my_code_repository/`: 外部代码库
+  - `AI_helper/`: AI助手代码
+    - `yunwu_helper.py`: 云雾AI接口
 
-注意
+- `src/`: 原项目源代码
+  - `tts_helper.py`: TTS助手代码
 
-Bearer和token使用分号 ; 分隔，替换时请勿保留${}
-发送参数文档：https://www.volcengine.com/docs/6561/79823
-返回参数文档：https://www.volcengine.com/docs/6561/79823
+## 技术栈
 
-APPID：5171308068
-access token：DMwm_fkqA4lHn9-WhsxnRpbERJRRLSkH
-voice type：BV119_streaming
+- **后端**: Python, Flask
+- **前端**: Vue.js, Axios
+- **AI接口**: 云雾AI API
+- **TTS服务**: 方舟豆包TTS
 
-TTS模块：./src/test_tts.py
-题库：./src/data/evil_frog_quiz_database.json
+## 安装与运行
 
-123
-我是谁
+### 安装依赖
 
----
+```bash
+# 安装后端依赖
+pip install -r requirements.txt
 
-我理解您的需求是创建一个网站，实现用户与AI对话的功能，主要特点包括：
+# 安装前端依赖
+cd frontend
+npm install
+```
 
-1. **界面设计**：
-   - 屏幕中央显示表达AI不同状态的emoji表情
-   - 下方有用户输入窗口
-   - AI回复以字幕形式显示在emoji下方(不是聊天气泡形式)
-   - 同时播放AI回复的语音
+### 运行后端
 
-2. **功能流程**：
-   - 用户在输入框发送消息
-   - AI状态emoji根据处理状态变化
-   - 使用yunwu_helper.py调用AI生成文本回复
-   - 使用test_tts.py将文本转换为语音
-   - 显示文字字幕并播放语音
+```bash
+cd backend
+python run.py --mode both  # 同时启动普通模式和流式模式
+# 或者
+python run.py --mode normal  # 仅启动普通模式
+python run.py --mode stream  # 仅启动流式模式
+```
 
-3. **技术栈**：
-   - 后端：Python
-   - 前端：Vue
+### 运行前端
 
-## 项目规划
+```bash
+cd frontend
+npm run serve
+```
 
-### 1. 架构设计
+## 使用说明
 
-#### 前端部分 (Vue)
-- **组件结构**：
-  - AIEmoji组件：展示AI不同状态的emoji表情
-  - UserInput组件：用户输入区域
-  - SubtitleDisplay组件：显示AI回复字幕
-  - AudioPlayer组件：处理语音播放
+1. 打开浏览器访问 `http://localhost:8080`
+2. 在输入框中输入消息并发送
+3. 观察AI状态的emoji变化
+4. 查看AI回复的字幕并聆听语音
 
-#### 后端部分 (Python)
-- **Flask API**：
-  - `/chat` 端点：接收用户消息，返回AI回复和语音文件URL
-  - `/status` 端点：提供AI状态更新
+## 主要功能
 
-### 2. AI状态设计
-- **思考中**：显示思考emoji (例如：🤔)
-- **回复中**：显示讲话emoji (例如：🗣️)
-- **空闲状态**：默认表情 (例如：😊)
-- **错误状态**：出错表情 (例如：😅)
+### AI状态表情
 
-### 3. 数据流设计
-1. 用户发送消息 → 前端
-2. 前端发送API请求 → 后端
-3. 后端调用yunwu_helper.py获取AI回复
-4. 后端使用test_tts.py将回复转为语音
-5. 后端将文本和语音URL返回前端
-6. 前端更新emoji状态、显示字幕并播放语音
+- **空闲状态**: 😊
+- **思考中**: 🤔
+- **回复中**: 🗣️
+- **错误状态**: 😅
 
-### 4. 开发计划
+### 对话模式
 
-#### 第一阶段：后端开发
-1. 创建Flask应用，设置路由和端点
-2. 集成yunwu_helper.py实现AI对话功能
-3. 集成test_tts.py实现语音生成功能
-4. 实现状态管理机制
-5. 编写API文档
+- **普通模式**: 等待完整回复后生成语音
+- **流式模式**: 流式生成文本，分段生成语音
 
-#### 第二阶段：前端开发
-1. 初始化Vue项目
-2. 设计UI界面布局
-3. 实现各个组件功能
-4. 集成API调用逻辑
-5. 实现音频播放和emoji状态变化
+## API文档
 
-#### 第三阶段：集成和测试
-1. 前后端集成测试
-2. 用户体验优化
-3. 响应式设计调整
-4. 性能优化
-
-### 5. 技术要点
-
-#### 后端实现关键点
-- 使用Flask作为Web框架
-- 使用WebSocket或轮询机制实现状态更新
-- 将现有的yunwu_helper.py和test_tts.py转换为API服务
-
-#### 前端实现关键点
-- 使用Vue.js构建响应式UI
-- 使用Axios处理API请求
-- 使用Web Audio API处理音频播放
-- 实现平滑的emoji状态过渡动画
-
-请问您对这个规划有什么意见或建议？或者有什么细节需要我进一步解释的地方吗？
+详细的API文档请参考 `backend/API_DOCS.md`

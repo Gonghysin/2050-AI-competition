@@ -4,8 +4,17 @@ import asyncio
 import uuid
 import json
 import re
+import logging
 from flask import Flask, request, jsonify, Response, send_from_directory
 from flask_cors import CORS
+
+# 配置日志
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='[%(asctime)s] [%(levelname)s] [stream_app] %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger('stream_app')
 
 # 添加项目根目录到系统路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -18,6 +27,7 @@ app = Flask(__name__, static_folder='static')
 CORS(app)  # 启用CORS支持跨域请求
 
 # 初始化AI助手和TTS助手
+logger.info("初始化AI助手和TTS助手")
 ai_helper = YunwuHelper(api_key_group="default")
 tts_helper = TTSHelper()
 
@@ -26,6 +36,9 @@ sessions = {}
 
 # 句子和段落分隔符正则表达式
 SEGMENT_PATTERN = re.compile(r'(?<=[。！？.!?])\s*')
+
+# 保存全局响应生成器
+streaming_generators = {}
 
 def split_text_into_segments(text, min_segment_length=20):
     """
@@ -64,29 +77,65 @@ def split_text_into_segments(text, min_segment_length=20):
     
     return result
 
-@app.route('/api/chat/stream', methods=['POST'])
+@app.route('/api/chat/stream', methods=['POST', 'GET'])
 def chat_stream():
     """
     处理流式聊天请求，支持分段TTS生成
-    请求体格式: {"session_id": "xxx", "message": "用户消息", "model": "gpt-4o"}
+    POST: 开始新的流式生成
+    GET: 建立SSE连接获取流式响应
     """
-    data = request.json
-    message = data.get('message', '')
-    model = data.get('model', 'gpt-4o')  # 默认使用gpt-4o模型
-    session_id = data.get('session_id')
+    logger.info(f"收到流式请求: {request.method}")
     
-    # 如果没有提供session_id，创建一个新的
-    if not session_id:
-        session_id = str(uuid.uuid4())
-        sessions[session_id] = []
+    if request.method == 'POST':
+        # 处理POST请求，开始生成
+        data = request.json
+        message = data.get('message', '')
+        model = data.get('model', 'gpt-4o')  # 默认使用gpt-4o模型
+        session_id = data.get('session_id')
+        
+        logger.debug(f"请求数据: message='{message[:20]}...', model={model}, session_id={session_id}")
+        
+        # 如果没有提供session_id，创建一个新的
+        if not session_id:
+            session_id = str(uuid.uuid4())
+            sessions[session_id] = []
+            logger.debug(f"创建新会话 session_id={session_id}")
+        
+        # 如果提供了session_id但不存在，则创建一个新的历史记录列表
+        if session_id not in sessions:
+            sessions[session_id] = []
+            logger.debug(f"为现有session_id创建新的历史记录 session_id={session_id}")
+        
+        # 添加用户消息到历史记录
+        sessions[session_id].append({"role": "user", "content": message})
+        logger.debug(f"添加用户消息到历史记录, 当前历史记录长度: {len(sessions[session_id])}")
+        
+        # 创建请求ID用于跟踪此次请求
+        request_id = str(uuid.uuid4())
+        
+        # 创建并保存生成器
+        streaming_generators[request_id] = create_generator(session_id, message, model)
+        
+        logger.debug(f"创建生成器完成, request_id={request_id}")
+        return jsonify({"request_id": request_id})
     
-    # 如果提供了session_id但不存在，则创建一个新的历史记录列表
-    if session_id not in sessions:
-        sessions[session_id] = []
-    
-    # 添加用户消息到历史记录
-    sessions[session_id].append({"role": "user", "content": message})
-    
+    elif request.method == 'GET':
+        # 处理GET请求，建立SSE连接
+        request_id = request.args.get('request_id')
+        logger.debug(f"GET请求，建立SSE连接, request_id={request_id}")
+        
+        if not request_id or request_id not in streaming_generators:
+            logger.error(f"无效的request_id: {request_id}")
+            return jsonify({"error": "无效的请求ID"}), 400
+        
+        # 获取生成器并从字典中移除
+        generator = streaming_generators.pop(request_id)
+        
+        logger.debug(f"返回流式响应, request_id={request_id}")
+        return Response(generator, mimetype='text/event-stream')
+
+def create_generator(session_id, message, model):
+    """创建响应生成器"""
     def generate():
         try:
             # 用于收集完整的AI回复
@@ -98,6 +147,8 @@ def chat_stream():
             # 用于存储已生成TTS的段落ID列表
             tts_segment_ids = []
             
+            logger.info("开始流式生成回复")
+            
             # 调用AI助手获取流式回复
             for text_chunk in ai_helper.chat_stream(
                 messages=sessions[session_id],
@@ -105,14 +156,17 @@ def chat_stream():
             ):
                 full_response += text_chunk
                 current_segment += text_chunk
+                logger.debug(f"收到文本块: '{text_chunk}'")
                 
                 # 检查是否有句子结束
                 segments = split_text_into_segments(current_segment)
                 
                 # 如果有多个段落，处理除最后一个以外的所有段落
                 if len(segments) > 1:
+                    logger.debug(f"发现多个段落, 数量: {len(segments)}")
                     for i in range(len(segments) - 1):
                         segment = segments[i]
+                        logger.debug(f"处理段落 {i+1}/{len(segments)-1}: '{segment}'")
                         # 添加到已处理段落
                         processed_segments.append(segment)
                         
@@ -120,6 +174,7 @@ def chat_stream():
                         segment_id = str(uuid.uuid4())
                         audio_filename = f"{session_id}_{segment_id}.mp3"
                         audio_path = os.path.join(app.static_folder, audio_filename)
+                        logger.info(f"为段落生成TTS, segment_id={segment_id}")
                         
                         tts_helper.text_to_speech(
                             text=segment,
@@ -128,63 +183,53 @@ def chat_stream():
                         
                         # 发送段落完成信号和音频URL
                         tts_segment_ids.append(segment_id)
-                        yield f"data: {json.dumps({
-                            'text': text_chunk, 
-                            'done': False, 
-                            'segment_done': True,
-                            'segment_id': segment_id,
-                            'segment_text': segment,
-                            'audio_url': f'/static/{audio_filename}'
-                        })}\n\n"
+                        logger.debug(f"发送段落完成事件, audio_url=/static/{audio_filename}")
+                        yield f"data: {json.dumps({'text': text_chunk, 'done': False, 'segment_done': True, 'segment_id': segment_id, 'segment_text': segment, 'audio_url': f'/static/{audio_filename}'})}\n\n"
                     
                     # 更新当前段落为最后一个未完成的段落
                     current_segment = segments[-1]
+                    logger.debug(f"更新当前段落为: '{current_segment}'")
                 
                 # 发送文本块
+                logger.debug("发送文本块更新事件")
                 yield f"data: {json.dumps({'text': text_chunk, 'done': False})}\n\n"
             
             # 处理最后一个段落
             if current_segment:
+                logger.info("处理最后一个段落")
                 segment_id = str(uuid.uuid4())
                 audio_filename = f"{session_id}_{segment_id}.mp3"
                 audio_path = os.path.join(app.static_folder, audio_filename)
                 
+                logger.debug(f"为最后一个段落生成TTS: '{current_segment}'")
                 tts_helper.text_to_speech(
                     text=current_segment,
                     output_file=audio_path
                 )
                 
                 tts_segment_ids.append(segment_id)
-                yield f"data: {json.dumps({
-                    'text': '', 
-                    'done': False, 
-                    'segment_done': True,
-                    'segment_id': segment_id,
-                    'segment_text': current_segment,
-                    'audio_url': f'/static/{audio_filename}'
-                })}\n\n"
+                logger.debug(f"发送最后一个段落完成事件, audio_url=/static/{audio_filename}")
+                yield f"data: {json.dumps({'text': '', 'done': False, 'segment_done': True, 'segment_id': segment_id, 'segment_text': current_segment, 'audio_url': f'/static/{audio_filename}'})}\n\n"
             
             # 添加AI回复到历史记录
             sessions[session_id].append({"role": "assistant", "content": full_response})
+            logger.debug(f"添加AI回复到历史记录, 当前历史记录长度: {len(sessions[session_id])}")
             
             # 发送所有段落完成信号
-            yield f"data: {json.dumps({
-                'text': '', 
-                'done': True, 
-                'session_id': session_id, 
-                'segment_ids': tts_segment_ids,
-                'full_response': full_response
-            })}\n\n"
+            logger.info("生成完成, 发送完成信号")
+            yield f"data: {json.dumps({'text': '', 'done': True, 'session_id': session_id, 'segment_ids': tts_segment_ids, 'full_response': full_response})}\n\n"
             
         except Exception as e:
             # 发送错误信息
+            logger.error(f"流式生成过程中出错: {str(e)}", exc_info=True)
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
     
-    return Response(generate(), mimetype='text/event-stream')
+    return generate()
 
 @app.route('/api/stream_status', methods=['GET'])
 def get_stream_status():
     """获取流式AI状态（示例用）"""
+    logger.info("收到流式状态请求")
     return jsonify({
         "status": "streaming_supported"
     })
@@ -192,6 +237,7 @@ def get_stream_status():
 @app.route('/static/<path:filename>')
 def serve_static(filename):
     """提供静态文件服务"""
+    logger.debug(f"提供静态文件: {filename}")
     return send_from_directory(app.static_folder, filename)
 
 @app.route('/api/sessions/<session_id>', methods=['GET'])
@@ -219,4 +265,5 @@ def delete_session(session_id):
 if __name__ == '__main__':
     # 确保静态文件夹存在
     os.makedirs(app.static_folder, exist_ok=True)
+    logger.info(f"启动流式应用服务器，端口：8001")
     app.run(debug=True, host='0.0.0.0', port=8001) 
