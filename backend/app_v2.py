@@ -372,14 +372,110 @@ def verify_challenge_answer():
     data = request.json
     question_id = data.get('question_id')
     user_answer = data.get('answer', '')
+    session_id = data.get('session_id')
     
     if not question_id:
         return jsonify({"error": "缺少题目ID"}), 400
     
+    if not session_id or session_id not in sessions:
+        return jsonify({"error": "无效的会话ID"}), 400
+    
+    # 将用户回答添加到会话历史
+    user_message = f"【回答】: {user_answer}"
+    sessions[session_id].append({"role": "user", "content": user_message})
+    logger.debug(f"添加用户答案到历史记录, session_id={session_id}")
+    
     # 验证答案
     result = frog_agent.verify_answer(question_id, user_answer)
     
+    # 构建验证反馈
+    is_correct = result.get('correct', False)
+    feedback = result.get('feedback', '')
+    correct_answer = result.get('correct_answer', '')
+    
+    # 创建反馈文本
+    feedback_text = feedback
+    if not is_correct:
+        feedback_text += f"\n正确答案是: {correct_answer}"
+    
+    # 添加验证结果到会话历史
+    sessions[session_id].append({"role": "assistant", "content": feedback_text})
+    logger.debug(f"添加验证反馈到历史记录, session_id={session_id}")
+    
+    # 生成反馈音频
+    audio_filename = f"answer_feedback_{uuid.uuid4()}.mp3"
+    audio_path = os.path.join(app.static_folder, audio_filename)
+    
+    tts_helper.text_to_speech(
+        text=feedback_text,
+        output_file=audio_path,
+        speed=1.5
+    )
+    
+    # 记录音频文件
+    audio_files.add(audio_filename)
+    
+    # 返回带音频的结果
+    result['feedback_text'] = feedback_text
+    result['audio_url'] = f"/static/{audio_filename}"
+    
     return jsonify(result)
+
+@app.route('/api/challenge/next', methods=['POST'])
+def get_next_challenge_question():
+    """获取下一道挑战题目"""
+    logger.info("收到获取下一题请求")
+    data = request.json
+    session_id = data.get('session_id')
+    
+    if not session_id or session_id not in sessions:
+        return jsonify({"error": "无效的会话ID"}), 400
+    
+    # 获取下一题
+    next_question_data = frog_agent.get_next_challenge_question()
+    
+    # 如果没有更多题目
+    if not next_question_data:
+        logger.info("没有更多题目，挑战结束")
+        return jsonify({
+            "finished": True,
+            "message": "挑战已完成"
+        })
+    
+    # 获取题目信息
+    challenge_text = next_question_data.get('message', '')
+    question = next_question_data.get('questions', [{}])[0]
+    challenge_stage = next_question_data.get('challenge_stage', 0)
+    
+    # 将题目添加到会话历史
+    sessions[session_id].append({"role": "assistant", "content": challenge_text})
+    logger.debug(f"添加下一题到历史记录, session_id={session_id}, challenge_stage={challenge_stage}")
+    
+    # 生成题目音频
+    audio_filename = f"challenge_next_{uuid.uuid4()}.mp3"
+    audio_path = os.path.join(app.static_folder, audio_filename)
+    
+    # 清理文本再进行TTS
+    clean_challenge_text = clean_text_for_tts(challenge_text)
+    tts_helper.text_to_speech(
+        text=clean_challenge_text,
+        output_file=audio_path,
+        speed=1.5
+    )
+    
+    # 记录音频文件
+    audio_files.add(audio_filename)
+    
+    # 返回带题目信息和音频的结果
+    return jsonify({
+        "finished": False,
+        "message": challenge_text,
+        "audio_url": f"/static/{audio_filename}",
+        "questions": [question],
+        "challenge_id": next_question_data.get('challenge_id'),
+        "challenge_stage": challenge_stage,
+        "total_stages": next_question_data.get('total_stages')
+    })
 
 @app.route('/api/challenge/feedback', methods=['POST'])
 def get_challenge_feedback():

@@ -3,17 +3,17 @@
     <input
       type="text"
       v-model="message"
-      @keyup.enter="sendMessage"
+      @keyup.enter="handleSubmit"
       :disabled="isLoading"
-      placeholder="请输入消息..."
+      :placeholder="challengeMode ? '请输入您的答案...' : '请输入消息...'"
       class="input-field"
     />
     <button 
-      @click="sendMessage" 
+      @click="handleSubmit" 
       :disabled="isLoading"
       class="send-button"
     >
-      {{ isLoading ? '请稍等...' : '发送' }}
+      {{ isLoading ? '请稍等...' : (challengeMode ? '提交' : '发送') }}
     </button>
   </div>
 </template>
@@ -23,6 +23,10 @@ export default {
   name: 'UserInput',
   props: {
     isLoading: {
+      type: Boolean,
+      default: false
+    },
+    challengeMode: {
       type: Boolean,
       default: false
     }
@@ -38,11 +42,17 @@ export default {
     }
   },
   methods: {
-    sendMessage() {
+    handleSubmit() {
       if (this.isLoading || !this.message.trim()) return;
       
-      console.log(`[UserInput] 发送消息: ${this.message.substring(0, 30)}${this.message.length > 30 ? '...' : ''}`);
-      this.$emit('send-message', this.message);
+      if (this.challengeMode) {
+        console.log(`[UserInput] 提交答案: ${this.message}`);
+        this.$emit('submit-answer', this.message);
+      } else {
+        console.log(`[UserInput] 发送消息: ${this.message.substring(0, 30)}${this.message.length > 30 ? '...' : ''}`);
+        this.$emit('send-message', this.message);
+      }
+      
       this.message = '';
     }
   },

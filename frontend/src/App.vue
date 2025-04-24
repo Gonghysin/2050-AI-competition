@@ -10,7 +10,9 @@
       <!-- 用户输入区域 -->
       <UserInput 
         @send-message="sendMessage" 
+        @submit-answer="submitChallengeAnswer"
         :is-loading="aiStatus !== 'idle'" 
+        :challenge-mode="challengeMode"
       />
     </div>
   </div>
@@ -39,7 +41,16 @@ export default {
       eventSource: null,
       useStreamMode: true, // 是否使用流式模式
       playedAudioFiles: [], // 已播放过的音频文件
-      currentAudio: null    // 当前正在播放的音频实例
+      currentAudio: null,    // 当前正在播放的音频实例
+      // 挑战模式状态
+      challengeMode: false,  // 是否处于挑战模式
+      currentChallenge: {    // 当前挑战信息
+        challengeId: null,   // 当前题目ID
+        questions: [],       // 当前题目信息
+        stage: 0,            // 当前阶段（第几题）
+        totalStages: 0,      // 总题目数
+        correctCount: 0      // 答对的题目数
+      }
     };
   },
   methods: {
@@ -282,23 +293,7 @@ export default {
               // 处理挑战模式
               case 'challenge':
                 console.log('[App] 收到挑战模式数据');
-                this.currentText = data.challenge_text;
-                
-                // 将音频添加到队列
-                if (data.audio_url) {
-                  this.audioQueue.push(data.audio_url);
-                  console.log(`[App] 音频添加到队列, 当前队列长度: ${this.audioQueue.length}`);
-                  
-                  // 记录已播放的音频文件
-                  const challengeFilename = data.audio_url.replace('/static/', '');
-                  this.playedAudioFiles.push(challengeFilename);
-                  
-                  // 如果没有正在播放的音频，开始播放
-                  if (this.audioQueue.length === 1 && !this.isAudioPlaying) {
-                    console.log('[App] 开始播放音频队列');
-                    this.playNextAudio();
-                  }
-                }
+                this.handleChallengeData(data);
                 break;
               
               // 处理错误
@@ -471,6 +466,176 @@ export default {
           reject(error);
         });
       });
+    },
+    
+    // 处理挑战模式数据
+    handleChallengeData(data) {
+      console.log('[App] 处理挑战模式数据:', data);
+      
+      // 启动挑战模式
+      this.challengeMode = true;
+      
+      // 更新字幕内容
+      this.currentText = data.challenge_text || data.message;
+      
+      // 更新挑战信息
+      if (data.questions && data.questions.length > 0) {
+        this.currentChallenge.questions = data.questions;
+        this.currentChallenge.challengeId = data.challenge_id;
+        
+        if (data.challenge_stage) {
+          this.currentChallenge.stage = data.challenge_stage;
+        }
+        
+        if (data.total_stages) {
+          this.currentChallenge.totalStages = data.total_stages;
+        }
+      }
+      
+      // 将音频添加到队列
+      if (data.audio_url) {
+        this.audioQueue.push(data.audio_url);
+        console.log(`[App] 音频添加到队列, 当前队列长度: ${this.audioQueue.length}`);
+        
+        // 记录已播放的音频文件
+        const challengeFilename = data.audio_url.replace('/static/', '');
+        this.playedAudioFiles.push(challengeFilename);
+        
+        // 如果没有正在播放的音频，开始播放
+        if (this.audioQueue.length === 1 && !this.isAudioPlaying) {
+          console.log('[App] 开始播放音频队列');
+          this.playNextAudio();
+        }
+      }
+    },
+    
+    // 提交挑战答案
+    async submitChallengeAnswer(answer) {
+      console.log(`[App] 提交挑战答案: ${answer}`);
+      
+      // 确保有效的挑战ID和会话ID
+      if (!this.currentChallenge.challengeId || !this.sessionId) {
+        console.error('[App] 无效的挑战ID或会话ID');
+        return;
+      }
+      
+      const question = this.currentChallenge.questions[0];
+      if (!question) {
+        console.error('[App] 无效的题目信息');
+        return;
+      }
+      
+      try {
+        // 显示思考状态
+        this.aiStatus = 'thinking';
+        
+        // 验证答案
+        const response = await axios.post('/api/challenge/verify', {
+          question_id: question.id,
+          answer: answer,
+          session_id: this.sessionId
+        });
+        
+        console.log('[App] 验证答案响应:', response.data);
+        
+        // 更新UI显示反馈
+        this.currentText = response.data.feedback_text;
+        this.aiStatus = 'speaking';
+        
+        // 更新正确答题计数
+        if (response.data.correct) {
+          this.currentChallenge.correctCount++;
+        }
+        
+        // 播放反馈音频
+        if (response.data.audio_url) {
+          await this.playAudio(response.data.audio_url);
+          
+          // 记录已播放的音频文件
+          const feedbackFilename = response.data.audio_url.replace('/static/', '');
+          this.playedAudioFiles.push(feedbackFilename);
+        }
+        
+        // 获取下一题或结束挑战
+        await this.getNextChallengeQuestion();
+        
+      } catch (error) {
+        console.error('[App] 提交挑战答案出错:', error);
+        this.aiStatus = 'error';
+        this.currentText = '抱歉，提交答案时出现了问题，请重试。';
+      }
+    },
+    
+    // 获取下一道挑战题目
+    async getNextChallengeQuestion() {
+      console.log('[App] 获取下一道挑战题目');
+      
+      try {
+        const response = await axios.post('/api/challenge/next', {
+          session_id: this.sessionId
+        });
+        
+        console.log('[App] 获取下一题响应:', response.data);
+        
+        if (response.data.finished) {
+          // 挑战已完成，获取最终反馈
+          await this.getChallengeResultFeedback();
+          return;
+        }
+        
+        // 处理下一题数据
+        this.handleChallengeData(response.data);
+        
+      } catch (error) {
+        console.error('[App] 获取下一题出错:', error);
+        this.aiStatus = 'error';
+        this.currentText = '抱歉，获取下一题时出现了问题，请重试。';
+      }
+    },
+    
+    // 获取挑战结果反馈
+    async getChallengeResultFeedback() {
+      console.log('[App] 获取挑战结果反馈');
+      
+      try {
+        const response = await axios.post('/api/challenge/feedback', {
+          correct_count: this.currentChallenge.correctCount,
+          session_id: this.sessionId
+        });
+        
+        console.log('[App] 获取挑战结果反馈响应:', response.data);
+        
+        // 更新UI显示最终反馈
+        this.currentText = response.data.feedback;
+        this.aiStatus = 'speaking';
+        
+        // 播放反馈音频
+        if (response.data.audio_url) {
+          await this.playAudio(response.data.audio_url);
+          
+          // 记录已播放的音频文件
+          const feedbackFilename = response.data.audio_url.replace('/static/', '');
+          this.playedAudioFiles.push(feedbackFilename);
+        }
+        
+        // 重置挑战模式
+        this.challengeMode = false;
+        this.currentChallenge = {
+          challengeId: null,
+          questions: [],
+          stage: 0,
+          totalStages: 0,
+          correctCount: 0
+        };
+        
+        // 更新状态为空闲
+        this.aiStatus = 'idle';
+        
+      } catch (error) {
+        console.error('[App] 获取挑战结果反馈出错:', error);
+        this.aiStatus = 'error';
+        this.currentText = '抱歉，获取挑战结果时出现了问题，请重试。';
+      }
     }
   },
   created() {

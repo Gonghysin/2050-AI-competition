@@ -406,6 +406,44 @@ class EvilFrogQuizProcessor:
                 "感受数据毒素侵蚀你可怜大脑的滋味吧！"
             ]
             return random.choice(wrong_feedbacks)
+    
+    def get_questions_by_type(self, question_type: str, count: int = 1) -> List[Dict[str, Any]]:
+        """
+        获取指定类型的随机题目
+        
+        参数:
+            question_type: 题目类型 (judge=判断题, choice=选择题, qa=问答题)
+            count: 需要获取的题目数量
+            
+        返回:
+            指定类型的随机题目列表
+        """
+        # 映射题库中的类型名称
+        type_mapping = {
+            "judge": "judgment",
+            "choice": "choice",
+            "qa": "simple_answer"
+        }
+        
+        # 获取实际类型名称
+        actual_type = type_mapping.get(question_type, question_type)
+        
+        # 从题库中获取指定类型的题目
+        questions_of_type = self.quiz_data.get("questions_by_type", {}).get(actual_type, [])
+        
+        if not questions_of_type:
+            return []
+        
+        # 随机选择指定数量的题目
+        selected_questions = random.sample(questions_of_type, min(count, len(questions_of_type)))
+        
+        # 确保题目有正确的类型标记
+        for q in selected_questions:
+            if "type" not in q:
+                q["type"] = question_type
+            q["challenge_mode"] = True
+        
+        return selected_questions
 
 if __name__ == "__main__":
     main() 
